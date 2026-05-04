@@ -13,6 +13,7 @@ import CartPage from "./pages/CartPage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ResetPassword from "./pages/ResetPassword.tsx";
 import GardenSizer from "./pages/GardenSizer.tsx";
+import WateringPlan from "./pages/WateringPlan.tsx";
 
 const queryClient = new QueryClient();
 
