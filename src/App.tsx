@@ -33,7 +33,7 @@ const App = () => (
             <Route path="/signup" element={<AuthPage initialMode="signup" />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/havemaaler" element={<GardenSizer />} />
-            <Route path="/vanding" element={<Placeholder active="water" eyebrow="Vandingsplan" title="Vanding der følger vejret." description="Lav timere for hvert bed. AI'en justerer efter regn og planternes behov. Bygges i fase 5." />} />
+            <Route path="/vanding" element={<WateringPlan />} />
             <Route path="/ai" element={<Placeholder active="ai" eyebrow="Plantepleje AI" title="Spørg om alt. Den kender din have." description="Få råd om beskæring, gødning, sygdomme og daglig pleje. Bygges i fase 6 med Lovable AI." />} />
             <Route path="/konto" element={<Placeholder active="account" eyebrow="Min konto" title="Din have, dine ordrer." description="Samlet overblik over alt du har gang i. Login fungerer allerede — dashboard bygges i fase 7." />} />
             <Route path="*" element={<NotFound />} />
