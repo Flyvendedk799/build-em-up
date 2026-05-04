@@ -1,101 +1,110 @@
-# Havelandet — Build Plan
+# Havemåler v2 — Ambitious upgrade
 
-A Danish garden platform with cinematic landing, webshop, garden area measurement, watering plan, AI plant chat, and account dashboard. We'll port the static design 1:1 and wire real functionality, sequenced to avoid corner-cutting.
+Goal: turn the current "click corners on a fuzzy satellite tile" tool into a precise, semi-automatic lawn measurement experience with crisp aerial imagery, AI-assisted grass selection, and a much better drawing UX.
 
-## Tech foundation
+## 1. High-resolution Danish aerial imagery
 
-- React + Vite + Tailwind (existing). Add: Three.js + @react-three/fiber@^8.18, @react-three/drei@^9.122, react-router (already), react-markdown, mapbox-gl, @turf/turf, zustand (cart + UI state), date-fns.
-- Lovable Cloud for auth, database, storage, edge functions.
-- Lovable AI Gateway for the plantepleje chat.
-- Mapbox for the Havemåler (token via secret `MAPBOX_PUBLIC_TOKEN`, public, used client-side).
-- All copy stays in Danish.
+Mapbox satellite tops out around ~30 cm/px and is dated in DK. We replace it (or layer over it) with **Dataforsyningen / SDFE ortofoto WMTS** — official Danish 12.5 cm orthophotos, free for non-commercial use with a token.
 
-## Design system port (Phase 0)
+- Add `DATAFORSYNINGEN_TOKEN` secret (user obtains from dataforsyningen.dk — free signup).
+- New edge function `get-ortofoto-config` returns `{ token, wmtsUrl }` so the token never ships to the browser bundle.
+- In `GardenSizer.tsx`, register a Mapbox `raster` source pointing at the WMTS `orto_foraar_wmts` layer (latest spring orthophoto, ~12.5 cm). Use it as the base; keep Mapbox satellite as fallback if the WMTS call fails or user is outside DK.
+- Add a small "Billede" toggle: `Ortofoto 2024` / `Mapbox satellit` / `Skråfoto` (skråfoto via Dataforsyningen's `Skraafoto` API — oblique imagery for orientation).
+- Bump max zoom to 21 and enable `maxTileCacheSize` tuning so panning at z20+ is smooth.
 
-- Copy `tokens.css` colors/fonts into `index.css` as HSL CSS variables and extend `tailwind.config.ts` (Tenor Sans, Inter Tight, JetBrains Mono; gold/mist/leaf/night palette).
-- Build shared layout primitives: `<SiteNav>` (dark, landing) and `<AppNav>` (light, app pages), `<Footer>`, `<Container>`, button variants, eyebrow, page-head.
+## 2. Matrikel (cadastral) overlay
 
-## Phase 1 — Landing page (`/`)
+Pull the property boundary directly so users see exactly what they own.
 
-- Port `index.html` exactly: loader, sticky nav, hero, 4-act scroll narrative with Three.js scene (`js/scene.js`), progress rail, tools grid, webshop strip, seasons band, manifesto, footer.
-- Convert `scene.js` to a `<HeroScene>` R3F component; preserve the 4-act camera/lighting choreography driven by scroll position.
-- Tools grid + webshop strip link to real routes.
+- Use Dataforsyningen **Matrikel WFS** (`matrikel:Jordstykke`) — query by point (the geocoded address) to fetch the parcel polygon as GeoJSON.
+- Render as a dashed gold outline on the map; offer a one-click "Brug matrikel som udgangspunkt" button that seeds the polygon points from the parcel boundary so the user only has to trim away house/driveway.
 
-## Phase 2 — Auth + database (Lovable Cloud)
+## 3. AI-assisted grass selection ("magic wand")
 
-- Email/password + Google sign-in. `/login`, `/signup`, `/reset-password` pages styled to match.
-- `profiles` table (id → auth.users, name, address, lat, lng, postal_code, avatar_url).
-- Tables (all RLS, owner-only):
-  - `gardens` (user_id, name, address, polygon geojson, area_m2, created_at)
-  - `garden_zones` (garden_id, name, type [bed/lawn/greenhouse], polygon, area_m2)
-  - `plants_catalog` (slug, name_da, latin, water_need, sun, season info) — seeded
-  - `user_plants` (user_id, garden_id, zone_id, plant_slug, qty, planted_at)
-  - `watering_schedules` (zone_id, weekday_mask, start_time, duration_min, enabled, ai_adjusted)
-  - `watering_events` (schedule_id, ran_at, mm_delivered, weather_skipped)
-  - `devices` (user_id, kind [mower/sprinkler/sensor], name, status, battery, last_seen)
-  - `products`, `product_variants`, `orders`, `order_items` (seeded catalog from design)
-  - `chat_conversations`, `chat_messages` (role, content, created_at)
-- `app_role` enum + `user_roles` + `has_role()` for admin product editing.
-- Auto-create profile trigger on signup.
+The headline feature. User clicks once on grass, we auto-trace a polygon around the connected lawn area.
 
-## Phase 3 — Webshop (`/webshop`, `/webshop/:slug`, `/cart`)
+Two layered approaches, fall back gracefully:
 
-- Port `webshop.html` tabs/grid. Product list from DB with categories: Frø & planter, Jord & gødning, Robotplæneklippere, Vanding.
-- Product detail page (gallery, description, variants, add-to-cart).
-- Cart in zustand, persisted to localStorage; cart drawer + `/cart` page with quantities, totals, shipping estimate. Checkout button shows "Betaling kommer snart" — no payment in v1 per scope.
-- Admin route `/admin/products` (role-gated) for CRUD.
+**A. Client-side NDVI-like color segmentation (fast, offline).**
+- When the user enters drawing mode, render the current map viewport to an offscreen canvas via `map.getCanvas()` + `html2canvas` style readback (Mapbox supports `preserveDrawingBuffer`).
+- On "magic wand" click: run a flood-fill in HSV space from the click pixel, accepting pixels where hue ∈ green band (~70–160°) and saturation > threshold. Tolerance slider in UI.
+- Trace the resulting binary mask with a marching-squares contour (use `d3-contour` — already small, no native deps), simplify with `turf.simplify` (tolerance ~0.00002), and convert pixel coords back to lng/lat via `map.unproject`.
+- Result: a closed polygon the user can nudge.
 
-## Phase 4 — Havemåler (`/havemaaler`)
+**B. Server-side segmentation (higher quality, optional).**
+- New edge function `segment-lawn` that:
+  1. Receives `{ bbox, zoom }`.
+  2. Fetches the corresponding ortofoto tile(s) server-side.
+  3. Calls a vision model (Lovable AI `google/gemini-2.5-pro` with image input) prompted to return a GeoJSON polygon of the lawn area, or — better — runs a small ONNX segmentation model (e.g. a quantised DeepLabv3-MobileNet trained on aerial imagery) via `onnxruntime-web` if we want to keep it deterministic.
+  4. Returns simplified polygon GeoJSON.
+- Trigger via a "AI-foreslå plæne" button. Show a skeleton pulse while loading.
+- Cache by tile-bbox hash in a new `lawn_segmentation_cache` table to avoid re-billing.
 
-- Port `garden-sizer.html` exactly (address step, map step, results step).
-- Address autocomplete via Mapbox Geocoding (Denmark-restricted).
-- Mapbox satellite map; user clicks polygon points around lawn/garden; @turf/turf computes area in m².
-- Multi-zone drawing with zone type (lawn / bed / greenhouse / terrace).
-- Recommendation engine: maps area → robot mower model from product catalog, with klippetid estimate.
-- Save garden + zones to DB (logged-in users); guest gets a "save → log in" prompt.
+Phase 1 ships A; B is wired behind a feature flag and the same UI button.
 
-## Phase 5 — Vandingsplan (`/vanding`)
+## 4. Drawing UX overhaul
 
-- Port `watering.html` cinematic stage (animated rain, sun arc, droplets) as React + CSS.
-- Per-zone schedule editor: weekdays, start time, duration, soil-type, plants in zone.
-- Edge function `weather-adjust` (daily cron) calls Open-Meteo for the user's lat/lng, marks scheduled events as skipped if rain forecast > threshold or soil moist.
-- Calendar/timeline view of upcoming waterings; manual "vand nu" button writes to `watering_events`.
-- "AI justerer" toggle per schedule.
+Current tool only supports add-corner + close. Add:
 
-## Phase 6 — Plantepleje AI (`/ai`)
+- **Vertex editing**: drag any existing vertex; insert vertex on edge by clicking the midpoint handle (rendered as small hollow dots).
+- **Multi-polygon / holes**: support adding "exclusion" polygons (e.g. terrace, flowerbed) that subtract from the lawn area. Use `turf.difference`. New tool buttons: `+ Område`, `– Udeluk`.
+- **Snap-to-edge**: when drawing near an existing vertex (≤10px) snap visually + audibly (subtle).
+- **Keyboard**: `Z` undo, `Esc` cancel current draw, `Enter` close polygon, `Del` remove selected vertex.
+- **Measurement HUD upgrades**: live edge length labels along each segment while drawing; total area + perimeter pill already exists, add "ekskluderet" sub-line.
+- **Mobile**: long-press to add vertex, two-finger pan, dedicated bottom toolbar.
 
-- Port `ai-chat.html` (sidebar conversations + chat shell).
-- Edge function `plant-chat` calling Lovable AI Gateway (`google/gemini-2.5-flash`) with streaming SSE.
-- System prompt is built from the user's gardens, zones, plants, recent watering events, and current weather → "den kender din have".
-- Tool calls: `get_my_plants`, `get_watering_plan`, `update_watering_schedule`, `recommend_product`. Results render inline.
-- Markdown rendering via react-markdown. Conversations persisted in DB; new chat / rename / delete.
+## 5. Smarter recommendations
 
-## Phase 7 — Min konto (`/konto`)
+- Compute lawn **complexity** (perimeter² / area ratio) and **slope** (sample Dataforsyningen DHM elevation WCS at polygon vertices). Feed into tier selection so a 600 m² lawn with high complexity bumps to R2.
+- Show "passages" detection: narrow corridors <0.6 m flagged as problematic for the recommended model.
+- Add an "Eksporter" menu: GeoJSON, KML, PDF report (areal, omkreds, anbefaling, kort-snapshot via `map.getCanvas().toDataURL()`).
 
-- Port `account.html` layout (sidebar + sections):
-  - Oversigt (next watering, mower status, weather, latest order, AI tips)
-  - Ordrer (from `orders`)
-  - Min have (plants list grouped by zone, add/remove)
-  - Vandingsplan (link/embed of phase 5)
-  - Enheder (devices CRUD, mock status updates)
-  - Profil + adresse + log ud
-- Realtime subscription so device status / watering events update live.
+## 6. Persistence & re-edit
 
-## Phase 8 — Polish + QA
+- When saving, also persist the simplified polygon, exclusions array, image source used, and a thumbnail (PNG) to a new column `gardens.thumbnail_url` (Supabase Storage bucket `garden-thumbnails`, public read).
+- Account page already lists gardens — add an "Åbn i havemåler" link that hydrates `GardenSizer` from saved polygon for re-editing.
 
-- Mobile responsive pass on every page (design currently desktop-leaning).
-- Loading skeletons, empty states, error toasts in Danish.
-- SEO meta per route, OpenGraph, sitemap.
-- Lighthouse pass on landing (lazy-load Three scene below the fold on mobile).
+## Technical layout
 
-## Technical details
+```text
+src/pages/GardenSizer.tsx          orchestrator, becomes ~thin
+src/features/sizer/
+  useImagerySource.ts              switch between ortofoto / mapbox / skraafoto
+  useMatrikel.ts                   WFS lookup + render layer
+  useDrawing.ts                    vertex/edge/exclusion state machine
+  useMagicWand.ts                  client-side flood-fill + contour
+  segmentation.ts                  calls segment-lawn edge fn
+  measurements.ts                  area/perimeter/slope/complexity
+  exporters.ts                     geojson/kml/pdf
+  components/
+    Toolbar.tsx, ImagerySwitch.tsx, EdgeLabels.tsx, MagicWandHint.tsx
 
-- Routes: `/`, `/login`, `/signup`, `/reset-password`, `/webshop`, `/webshop/:slug`, `/cart`, `/havemaaler`, `/vanding`, `/ai`, `/konto`, `/konto/:section`, `/admin/products`.
-- Secrets to add: `MAPBOX_PUBLIC_TOKEN` (after Phase 1, before Phase 4). Lovable AI key is auto-provisioned.
-- Edge functions: `plant-chat` (streaming), `weather-adjust` (scheduled), `recommend-mower` (pure compute, can be client too).
-- Three.js scene runs only on landing, suspended while off-screen.
-- Roles: separate `user_roles` table with `has_role()` security-definer function for admin gating.
+supabase/functions/
+  get-ortofoto-config/             returns WMTS url + token
+  segment-lawn/                    image -> polygon (Lovable AI or ONNX)
 
-## Sequence
+migrations:
+  - gardens: add thumbnail_url text, exclusions jsonb, imagery_source text
+  - new lawn_segmentation_cache (bbox_hash pk, polygon jsonb, created_at)
+  - storage bucket garden-thumbnails (public read, auth write)
+```
 
-Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, each phase independently usable. After your approval I'll start with Phase 0 + 1 (design system + landing) so you see the hero come alive first, then continue through the sequence.
+New deps: `@turf/difference`, `@turf/simplify`, `d3-contour`, `proj4` (for WMTS tile math if needed). All small and tree-shakeable.
+
+## Rollout order
+
+1. Migrations + storage bucket + `DATAFORSYNINGEN_TOKEN` secret prompt.
+2. `get-ortofoto-config` edge fn + imagery switch (instant visual win).
+3. Matrikel overlay + "use matrikel" seed.
+4. Drawing UX overhaul (vertex edit, exclusions, edge labels, keyboard).
+5. Client-side magic wand.
+6. Server segmentation edge fn behind flag.
+7. PDF export + re-edit from saved garden + thumbnails.
+
+Each step is independently shippable.
+
+## Open questions
+
+- Are you OK signing up at dataforsyningen.dk for a free token? (required for ortofoto + matrikel + DHM).
+- Do you want the AI segmentation (step 6) in this round, or defer until after the client-side wand proves out?
+- Commercial use of Dataforsyningen requires a paid agreement — is build-em-up.lovable.app commercial?

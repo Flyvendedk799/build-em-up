@@ -172,11 +172,14 @@ export type Database = {
           address: string | null
           area_m2: number | null
           created_at: string
+          exclusions: Json | null
           id: string
+          imagery_source: string | null
           latitude: number | null
           longitude: number | null
           name: string
           polygon: Json | null
+          thumbnail_url: string | null
           updated_at: string
           user_id: string
         }
@@ -184,11 +187,14 @@ export type Database = {
           address?: string | null
           area_m2?: number | null
           created_at?: string
+          exclusions?: Json | null
           id?: string
+          imagery_source?: string | null
           latitude?: number | null
           longitude?: number | null
           name?: string
           polygon?: Json | null
+          thumbnail_url?: string | null
           updated_at?: string
           user_id: string
         }
@@ -196,13 +202,37 @@ export type Database = {
           address?: string | null
           area_m2?: number | null
           created_at?: string
+          exclusions?: Json | null
           id?: string
+          imagery_source?: string | null
           latitude?: number | null
           longitude?: number | null
           name?: string
           polygon?: Json | null
+          thumbnail_url?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      lawn_segmentation_cache: {
+        Row: {
+          bbox_hash: string
+          created_at: string
+          polygon: Json
+          source: string
+        }
+        Insert: {
+          bbox_hash: string
+          created_at?: string
+          polygon: Json
+          source?: string
+        }
+        Update: {
+          bbox_hash?: string
+          created_at?: string
+          polygon?: Json
+          source?: string
         }
         Relationships: []
       }
