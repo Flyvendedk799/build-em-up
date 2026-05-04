@@ -37,7 +37,7 @@ const App = () => (
             <Route path="/havemaaler" element={<GardenSizer />} />
             <Route path="/vanding" element={<WateringPlan />} />
             <Route path="/ai" element={<PlantCareAI />} />
-            <Route path="/konto" element={<Placeholder active="account" eyebrow="Min konto" title="Din have, dine ordrer." description="Samlet overblik over alt du har gang i. Login fungerer allerede — dashboard bygges i fase 7." />} />
+            <Route path="/konto" element={<Account />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
