@@ -21,7 +21,7 @@ Deno.serve((req) => {
   // Simpler/more reliable: use the Web Mercator REST endpoint.
   const restTemplate =
     `https://api.dataforsyningen.dk/orto_foraar_DAF?service=WMS&request=GetMap&version=1.3.0` +
-    `&layers=orto_foraar&styles=&format=image/jpeg&transparent=false&width=512&height=512` +
+    `&layers=orto_foraar&styles=&format=image/jpeg&TRANSPARENT=FALSE&width=512&height=512` +
     `&crs=EPSG:3857&bbox={bbox-epsg-3857}&token=${token}`;
 
   return new Response(
