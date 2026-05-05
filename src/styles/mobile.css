@@ -1,0 +1,366 @@
+/* =========================================================
+   Havelandet — Mobile-first overrides
+   Applies only at small viewports. Desktop layout untouched.
+   ========================================================= */
+
+/* ---------- Bottom tab bar ---------- */
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .mobile-tabbar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    z-index: 80;
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 2px;
+    padding: 6px 6px;
+    background: rgba(12, 26, 19, 0.86);
+    -webkit-backdrop-filter: saturate(160%) blur(18px);
+    backdrop-filter: saturate(160%) blur(18px);
+    border: 1px solid rgba(237, 232, 223, 0.08);
+    border-radius: 22px;
+    box-shadow: 0 12px 32px -12px rgba(12, 26, 19, 0.55);
+    transform: translateY(140%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 380ms var(--ease-out), opacity 280ms var(--ease-out);
+  }
+  .mobile-tabbar.is-visible {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .mtb-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 4px 6px;
+    border-radius: 16px;
+    color: rgba(237, 232, 223, 0.62);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    transition: color 180ms, background 180ms;
+    min-width: 0;
+  }
+  .mtb-item:hover { color: var(--mist-25); }
+  .mtb-item.is-active {
+    color: var(--forest-900);
+    background: var(--gold-300);
+  }
+  .mtb-icon { display: inline-flex; }
+  .mtb-label {
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.02em;
+  }
+
+  /* Make room for the bar above page content */
+  body { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 78px); }
+}
+
+/* ---------- Generic mobile typography & spacing ---------- */
+@media (max-width: 720px) {
+  :root {
+    --fs-base: 15px;
+  }
+  .container { padding: 0 18px; }
+  .section { padding: 64px 0; }
+  .section-tight { padding: 48px 0; }
+  .page-head { padding: 32px 0 20px; }
+  .page-head h1 { font-size: clamp(30px, 8vw, 40px); }
+  .page-head p.lede { font-size: 15px; }
+
+  /* Buttons easier to tap */
+  .btn { height: 46px; padding: 0 18px; }
+  .btn-sm { height: 38px; padding: 0 14px; }
+}
+
+/* ---------- Top nav (landing — dark) ---------- */
+@media (max-width: 720px) {
+  .nav { padding: 12px 16px; }
+  .nav .nav-actions { gap: 6px; }
+  .nav .nav-actions .btn-ghost { display: none; }
+  .nav-logo { font-size: 19px; }
+}
+
+/* ---------- App nav (inner pages) ---------- */
+@media (max-width: 820px) {
+  .app-nav { padding: 10px 16px; }
+  .app-nav .nav-links { display: none; }
+  .app-nav .nav-actions .btn { display: none; }
+}
+
+/* ---------- Index hero & stage ---------- */
+@media (max-width: 720px) {
+  .stage { height: 460vh; }
+  .hero-intro { padding: 0 22px 18vh; }
+  .hero-intro h1 {
+    font-size: clamp(40px, 13vw, 64px);
+    max-width: 12ch;
+    line-height: 1.0;
+  }
+  .hero-intro .lede {
+    font-size: 14px;
+    margin-top: 16px;
+    max-width: 36ch;
+  }
+  .act-marker {
+    left: 22px;
+    right: 22px;
+    max-width: none;
+    top: auto;
+    bottom: 14vh;
+    transform: none;
+  }
+  .act-marker.is-active { transform: none; }
+  .act-marker h2 {
+    font-size: clamp(28px, 7.5vw, 40px);
+    margin-bottom: 12px;
+  }
+  .act-marker p {
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: none;
+  }
+  .act-marker .ix { font-size: 10px; margin-bottom: 12px; }
+  .scroll-cue { bottom: 18px; font-size: 9px; }
+  .scroll-cue .line { height: 24px; }
+  .progress-rail { display: none; }
+}
+
+/* ---------- Tools section ---------- */
+@media (max-width: 720px) {
+  .tools-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+  .tools-head h2 { font-size: clamp(28px, 8vw, 40px); }
+  .tools-head p { font-size: 14px; max-width: none; }
+  .tools-grid { gap: 16px; }
+  .tool-card { min-height: 280px !important; padding: 22px !important; }
+  .tool-card h3 { font-size: 22px; }
+  .tool-visual { min-height: 140px; margin-bottom: 18px; }
+}
+
+/* ---------- Webshop strip / shop grid ---------- */
+@media (max-width: 720px) {
+  .shop-section { padding: 64px 0; }
+  .shop-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .product .name { font-size: 15px; }
+  .product .meta { font-size: 11px; }
+  .product .price { font-size: 13px; }
+}
+
+/* ---------- Seasons ---------- */
+@media (max-width: 720px) {
+  .seasons-band { padding: 64px 0; }
+  .seasons-band h2 { margin-bottom: 32px; font-size: clamp(28px, 8vw, 40px); }
+  .seasons-grid { gap: 16px; }
+  .season-card h3 { font-size: 18px; }
+  .season-card p { font-size: 12px; }
+}
+
+/* ---------- Manifesto ---------- */
+@media (max-width: 720px) {
+  .manifesto { padding: 80px 0; }
+  .manifesto-stats { grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 32px; padding-top: 24px; }
+  .stat .num { font-size: 28px; }
+  .stat .lbl { font-size: 11px; }
+}
+
+/* ---------- Footer ---------- */
+@media (max-width: 720px) {
+  .footer { padding: 56px 0 28px; }
+  .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 40px; }
+  .footer-grid > div:first-child { grid-column: 1 / -1; }
+  .footer-mark { font-size: 26px; }
+  .footer-bottom {
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    font-size: 11px;
+  }
+}
+
+/* ---------- Webshop page ---------- */
+@media (max-width: 900px) {
+  .shop-layout { gap: 24px; padding-bottom: 80px; }
+  .facets {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+  }
+  .facets::-webkit-scrollbar { display: none; }
+  .facet-group {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .facet-group h4 {
+    display: inline-block;
+    margin: 0 8px 0 0;
+    font-size: 10px;
+  }
+  .facet-group ul {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .facet-group li {
+    padding: 6px 10px;
+    border-radius: var(--r-pill);
+    background: rgba(20, 39, 29, 0.06);
+    font-size: 12px;
+  }
+  .facet-group li input[type="checkbox"] { display: none; }
+  .shop-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+}
+
+/* ---------- Garden sizer ---------- */
+@media (max-width: 1000px) {
+  .sizer-layout { gap: 16px; padding-bottom: 80px; }
+  .canvas-host { aspect-ratio: 4 / 5; border-radius: var(--r-md); }
+  .canvas-host.topview { aspect-ratio: 4 / 5; }
+  .canvas-host .help {
+    top: 10px; left: 10px; right: 10px;
+    font-size: 11px;
+    padding: 7px 12px;
+  }
+  .canvas-host .area-pill {
+    top: 10px; right: 10px;
+    padding: 8px 12px;
+    font-size: 18px;
+  }
+  .canvas-host .tools {
+    bottom: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: calc(100% - 20px);
+  }
+  .canvas-host .tool-btn { padding: 7px 11px; font-size: 11px; }
+  .recommendation { position: static; padding: 22px; }
+}
+
+@media (max-width: 720px) {
+  .addr-step { gap: 20px; }
+  .addr-form { padding: 4px 4px 4px 14px; }
+  .addr-form input { font-size: 14px; padding: 10px 0; }
+  .addr-form > button { height: 40px; padding: 0 14px; font-size: 12px; }
+  .addr-meta { gap: 12px; flex-wrap: wrap; font-size: 10px; }
+  .addr-preview { aspect-ratio: 4 / 3; }
+
+  .topview-header { padding-bottom: 16px; gap: 10px; }
+  .addr-display .txt strong { font-size: 16px; }
+  .pin-badge { width: 34px; height: 34px; flex: 0 0 34px; }
+  .change-addr { padding: 7px 12px; font-size: 12px; }
+}
+
+/* ---------- Watering plan ---------- */
+@media (max-width: 900px) {
+  .water-layout { gap: 18px; padding-bottom: 80px; }
+  .beds-list {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 6px;
+    scrollbar-width: none;
+  }
+  .beds-list::-webkit-scrollbar { display: none; }
+  .bed-item { flex: 0 0 auto; padding: 10px 14px; }
+  .water-hero { padding: 24px 20px 20px; }
+  .water-hero h2 { font-size: 24px; }
+  .week-grid {
+    padding: 18px 16px;
+    grid-template-columns: repeat(7, minmax(40px, 1fr));
+    gap: 6px;
+    overflow-x: auto;
+  }
+  .day { padding: 10px 0; }
+  .day .dt { font-size: 17px; }
+  .ai-suggestion { margin: 18px 16px; padding: 14px 16px; }
+  .timeline { padding: 0 16px 24px; }
+}
+
+/* ---------- AI chat ---------- */
+@media (max-width: 800px) {
+  .chat-shell {
+    height: calc(100dvh - 130px);
+    min-height: 0;
+    border-radius: var(--r-md);
+  }
+  .chat-main-head { padding: 14px 18px; }
+  .chat-feed { padding: 18px; gap: 14px; }
+  .msg { max-width: 90%; }
+  .msg .bubble { font-size: 13.5px; padding: 10px 14px; }
+  .chat-input { padding: 12px 16px 16px; }
+  .chat-input-box { padding: 6px 6px 6px 14px; }
+  .chat-prompt { font-size: 11px; padding: 6px 10px; }
+}
+
+/* ---------- Account ---------- */
+@media (max-width: 900px) {
+  .account-layout { gap: 24px; padding-bottom: 80px; }
+  .acct-side {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .acct-side::-webkit-scrollbar { display: none; }
+  .acct-side ul {
+    display: flex;
+    gap: 6px;
+    padding-bottom: 6px;
+  }
+  .acct-side li a {
+    padding: 8px 14px;
+    border-radius: var(--r-pill);
+    background: rgba(20, 39, 29, 0.04);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .acct-side li a.active { background: var(--forest-800); color: var(--mist-25); }
+  .acct-card { padding: 20px; }
+  .order-row {
+    grid-template-columns: 56px 1fr;
+    grid-template-rows: auto auto;
+    gap: 10px 12px;
+  }
+  .order-row .thumb { width: 56px; height: 56px; flex: 0 0 56px; grid-row: span 2; }
+  .order-row .status { grid-column: 2; justify-self: start; }
+}
+
+@media (max-width: 720px) {
+  .acct-stat-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---------- Cart / Auth / Product detail ---------- */
+@media (max-width: 720px) {
+  .acct-card { padding: 18px; }
+  /* General form fields more tappable */
+  .field input, .field select, .field textarea {
+    padding: 13px 14px;
+    font-size: 15px; /* prevents iOS zoom */
+  }
+}
+
+/* ---------- iOS input zoom fix everywhere ---------- */
+@media (max-width: 720px) {
+  input, select, textarea { font-size: 16px; }
+}

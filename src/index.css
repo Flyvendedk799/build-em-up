@@ -3,6 +3,7 @@
 @import './styles/tokens.css';
 @import './styles/landing.css';
 @import './styles/app.css';
+@import './styles/mobile.css';
 
 @tailwind base;
 @tailwind components;

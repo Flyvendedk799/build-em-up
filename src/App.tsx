@@ -16,6 +16,7 @@ import GardenSizer from "./pages/GardenSizer.tsx";
 import WateringPlan from "./pages/WateringPlan.tsx";
 import PlantCareAI from "./pages/PlantCareAI.tsx";
 import Account from "./pages/Account.tsx";
+import { MobileTabBar } from "./components/layout/MobileTabBar.tsx";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/konto" element={<Account />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <MobileTabBar />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
