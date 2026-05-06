@@ -147,6 +147,7 @@ export function MobileTabBar() {
             to={it.to}
             className={`mtb-item ${isActive(it.to) ? "is-active" : ""}`}
             aria-label={it.label}
+            aria-current={isActive(it.to) ? "page" : undefined}
           >
             <span className="mtb-icon">{it.icon}</span>
             <span className="mtb-label">{it.label}</span>
