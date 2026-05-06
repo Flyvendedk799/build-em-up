@@ -36,11 +36,12 @@ function AccountButton({ dark = false }: { dark?: boolean }) {
 
 function CartButton() {
   const count = useCart((s) => s.count());
+  const open = useCart((s) => s.openCart);
   return (
-    <Link to="/cart" className="nav-cart" aria-label={`Indkøbskurv${count ? `, ${count} varer` : ""}`}>
+    <button onClick={open} className="nav-cart" aria-label={`Indkøbskurv${count ? `, ${count} varer` : ""}`}>
       <ShoppingCart size={16} />
       {count > 0 && <span className="nav-cart-badge">{count}</span>}
-    </Link>
+    </button>
   );
 }
 
