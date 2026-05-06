@@ -691,6 +691,7 @@ export default function GardenSizer() {
     });
     const { useActiveGarden } = await import("@/lib/activeGarden");
     useActiveGarden.getState().setActive(g.id);
+    try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
     toast.success("Have gemt"); navigate("/konto");
   }
 
