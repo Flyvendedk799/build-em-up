@@ -71,10 +71,20 @@ export default function PlantCareAI() {
   }
 
   async function send(text: string) {
-    if (!text.trim() || streaming || !user) return;
+    const trimmed = text.trim();
+    if ((!trimmed && !pendingImage) || streaming || !user) return;
     setInput("");
+    const imageDataUrl = pendingImage;
+    setPendingImage(null);
 
-    const userMsg: Msg = { role: "user", content: text.trim() };
+    const content: string | ContentPart[] = imageDataUrl
+      ? [
+          { type: "text", text: trimmed || "Hvad er der galt med denne plante?" },
+          { type: "image_url", image_url: { url: imageDataUrl } },
+        ]
+      : trimmed;
+
+    const userMsg: Msg = { role: "user", content };
     const history = [...messages, userMsg];
     setMessages(history);
     setStreaming(true);
@@ -83,7 +93,7 @@ export default function PlantCareAI() {
     try {
       // Create conversation if none
       if (!convId) {
-        const title = text.trim().slice(0, 60);
+        const title = (trimmed || "Billed-diagnose").slice(0, 60);
         const { data, error } = await supabase
           .from("chat_conversations")
           .insert({ user_id: user.id, title })
@@ -94,12 +104,15 @@ export default function PlantCareAI() {
         setActiveConv(convId);
       }
 
-      // Persist user message
+      // Persist user message (text-only summary; we don't store image in DB)
+      const persistedText = imageDataUrl
+        ? `[📷 Billede vedhæftet] ${trimmed}`.trim()
+        : trimmed;
       await supabase.from("chat_messages").insert({
         conversation_id: convId,
         user_id: user.id,
         role: "user",
-        content: userMsg.content,
+        content: persistedText,
       });
 
       // Call edge function with streaming
@@ -110,7 +123,7 @@ export default function PlantCareAI() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, hasImage: !!imageDataUrl }),
       });
 
       if (resp.status === 429) { toast.error("For mange beskeder — prøv igen om lidt."); setStreaming(false); return; }
