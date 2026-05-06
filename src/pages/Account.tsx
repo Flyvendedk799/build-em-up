@@ -16,12 +16,14 @@ type ZoneCount = { garden_id: string; count: number };
 export default function Account() {
   const { user, loading, signOut } = useAuth();
   const nav = useNavigate();
+  const { activeGardenId, setActive } = useActiveGarden();
   const [profile, setProfile] = useState<Profile>({ name: "", address: "", postal_code: "" });
   const [gardens, setGardens] = useState<Garden[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [plantCount, setPlantCount] = useState(0);
   const [wishProducts, setWishProducts] = useState<WishProduct[]>([]);
+  const [zoneCounts, setZoneCounts] = useState<Record<string, number>>({});
   const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
