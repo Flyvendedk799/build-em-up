@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Link, useNavigate } from "react-router-dom";
 
 import { unionRings, subtractRings, pixelDistance } from "@/lib/polygonOps";
+import PinpointSequence from "@/components/havemaaler/PinpointSequence";
 
 type Suggestion = { id: string; place_name: string; center: [number, number]; text: string };
 type LngLat = [number, number];
@@ -59,6 +60,7 @@ export default function GardenSizer() {
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [snapIndicator, setSnapIndicator] = useState<LngLat | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pinpointing, setPinpointing] = useState<{ name: string; center: LngLat } | null>(null);
 
   // History (undo/redo)
   type Snap = { main: Ring; mainClosed: boolean; exclusions: Ring[] };
@@ -97,10 +99,11 @@ export default function GardenSizer() {
   }, [query, mapboxToken]);
 
   function chooseAddress(s: Suggestion) {
-    setChosen({ name: s.place_name, center: s.center });
-    setQuery(s.place_name); setOpen(false); setStep(2);
+    setQuery(s.place_name); setOpen(false);
     setMain([]); setMainClosed(false); setExclusions([]); setCurrentExclusion([]);
     setMatrikel(null);
+    // Trigger cinematic pinpoint; finalises into step 2 in onDone
+    setPinpointing({ name: s.place_name, center: s.center });
   }
 
   // ----- Build style for current imagery choice -----
@@ -919,6 +922,19 @@ export default function GardenSizer() {
         )}
       </div>
       <SiteFooter />
+      {pinpointing && mapboxToken && (
+        <PinpointSequence
+          address={pinpointing.name}
+          center={pinpointing.center}
+          mapboxToken={mapboxToken}
+          ortoWmsTemplate={ortoCfg?.wmsTemplate ?? null}
+          onDone={() => {
+            setChosen({ name: pinpointing.name, center: pinpointing.center });
+            setStep(2);
+            setPinpointing(null);
+          }}
+        />
+      )}
     </>
   );
 }
