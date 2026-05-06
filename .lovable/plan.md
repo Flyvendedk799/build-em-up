@@ -1,76 +1,86 @@
-# Immersive Product Detail Page
+# Full Admin CMS — Ambitious Build
 
-Turn `/webshop/:slug` from a standard two‑column layout into an editorial, scroll‑driven experience that feels closer to a luxury garden brand site than a typical webshop.
+Transform `/admin` from a minimal dashboard into a proper headless CMS for the entire shop, plant catalog, orders, users, content and media. Built as a sidebar app at `/admin/*` with role-gated routes.
 
-## Vision
+## Architecture
 
-A cinematic PDP built in distinct "acts": a hero that breathes, a sticky media stage that reacts to scroll, a story section, a "see it in your garden" tool, social proof, and an intelligent cross‑sell. Same product data, dramatically more presence.
+```text
+/admin
+  ├── /              Dashboard (KPIs, charts, recent activity)
+  ├── /products      List + filters + bulk actions
+  │   └── /:id       Editor (details, variants, media, SEO, inventory)
+  ├── /plants        plants_catalog list
+  │   └── /:slug     Plant editor
+  ├── /orders        List + filters
+  │   └── /:id       Order detail (items, customer, shipping, status, refund note)
+  ├── /users         User list + role management
+  │   └── /:id       Profile + roles + orders
+  ├── /media         Storage browser (avatars, garden-thumbnails, new product-media)
+  ├── /content       Hero, featured, banners, FAQ, pages (key/value content blocks)
+  ├── /notifications Broadcast composer (insert into notifications per user / segment)
+  ├── /analytics     Sales, top products, conversion, traffic
+  └── /audit         Audit log viewer
+```
 
-## Acts (top to bottom)
+Shared shell: `AdminLayout` with shadcn `Sidebar` (collapsible icon mode), header with breadcrumb + global search + user menu. Route guard via `has_role(uid, 'admin')`.
 
-1. **Hero stage**
-   - Full‑viewport split: left = oversized serif product name with animated entrance, category eyebrow, price, primary CTAs. Right = animated product canvas (the existing gradient + SVG art) with parallax, a subtle floating shadow, and a soft Ken‑Burns drift.
-   - Background uses a derived tint from the product gradient (extracted at runtime) bleeding into the page.
-   - Breadcrumb + wishlist + share float at top.
+## Database changes
 
-2. **Sticky media stage / scrollytelling**
-   - As the user scrolls, the product visual stays pinned on one side while the other side advances through 3–4 "chapters": *Materials*, *Mål & dimensioner*, *Pleje*, *Bæredygtighed*. Each chapter swaps copy + a small inline diagram/SVG accent and nudges the hero art (rotation, zoom, color overlay) so it feels like the product is being inspected.
+New tables:
+- `content_blocks` — `key text pk`, `value jsonb`, `updated_by uuid`, timestamps. Public read, admin write.
+- `audit_log` — `id`, `actor_id`, `action text`, `entity text`, `entity_id text`, `diff jsonb`, `created_at`. Admin read only; inserted via triggers + edge function.
+- `product_media` — `id`, `product_id`, `url`, `alt`, `sort`, `is_primary`. Public read, admin write.
+- `product_inventory` — extend `product_variants` with `stock_qty int`, `low_stock_threshold int`, `track_inventory bool`.
+- `orders` — add `shipping_status`, `tracking_number`, `notes`, `refunded_at`. Add admin UPDATE policy.
+- `order_items` — add admin SELECT policy (so admins can see all line items).
+- `profiles` — add admin SELECT policy via `has_role`.
 
-3. **Variant & configurator strip**
-   - Sticky horizontal bar (becomes sticky on scroll past hero) with: variant chips, qty stepper, live price, "Læg i kurv" + "Køb nu". Replaces the current mobile sticky CTA with a unified responsive component.
+New storage bucket: `product-media` (public). RLS: admin write, public read.
 
-4. **"Pas til min have" panel**
-   - Pulls the active garden from `activeGarden.ts`. Shows: "Passer i din have (X m²) — fylder ~Y%" with a tiny scaled silhouette overlay. If no garden yet, CTA → `/garden-sizer`.
-   - For plant products: pulls weather context from the existing watering plan to show "Vandes ~N gange/uge i din zone".
+Triggers: `audit_trigger()` on products / variants / plants / orders writing to `audit_log`.
 
-5. **Specs grid**
-   - Editorial 3–4 column spec table (Materiale, Mål, Vægt, Oprindelse) styled as a magazine sidebar, not a boring `<table>`.
+Helper view (optional): `admin_order_summary` joining orders + profile + item count.
 
-6. **Story / long description**
-   - Full‑bleed band with the product gradient as background, large serif pull quote, and `description` typeset as a single editorial column with drop cap.
+## Sequence breakdown
 
-7. **Reviews & trust**
-   - Star summary, 2–3 highlighted reviews, trust badges (fragtfri over X, 30 dages retur, dansk kundeservice). Pulls from a new `product_reviews` table if present, otherwise renders a graceful empty state with "Vær den første".
+### Sequence 1 — Shell, Dashboard, Products CRUD
+- Migration: `product_media`, inventory cols, `audit_log` skeleton, `product-media` bucket + policies, admin policies on orders/profiles/order_items.
+- `AdminLayout` with sidebar, route guard, breadcrumbs.
+- Dashboard: KPI cards (revenue 30d, orders 30d, avg order, low stock count), recharts line chart of orders/day, recent orders table, top 5 products.
+- `/admin/products` list: search, category filter, stock filter, featured toggle, bulk delete/feature, pagination.
+- `/admin/products/:id` editor: tabs (Details, Variants, Media, SEO, Inventory). Drag-drop image upload to `product-media` bucket. Variant table with inline edit. Slug auto-gen. Markdown description.
 
-8. **Cross‑sell: "Komplet din have"**
-   - Bundle row: current product + 2 complementary items (same category or curated). Single "Tilføj alle (–10%)" CTA that adds them all to cart with a bundle note.
+### Sequence 2 — Plants, Orders, Users
+- `/admin/plants` list + editor mirroring products (image upload, sow/harvest month pickers, sun/water selects).
+- `/admin/orders` list with status filter, date range, customer search, CSV export.
+- `/admin/orders/:id` detail: line items, customer card, shipping address, status workflow (pending → paid → packed → shipped → delivered), tracking number, internal notes, refund button (status only — no payment integration).
+- `/admin/users` list (joined profiles + auth via edge function using service role). Assign/remove `admin` / `moderator` roles. View user's orders, gardens, plants from a single page.
 
-9. **Related + recently viewed**
-   - Keep current sections but restyle as horizontal snap‑scroll carousels with peek.
+### Sequence 3 — Media, Content, Notifications
+- `/admin/media`: grid browser for all storage buckets with upload, rename (copy+delete), delete, copy-URL. Filter by bucket.
+- `/admin/content`: editable blocks for hero copy, featured product IDs, homepage banners, FAQ entries, footer links — driven by `content_blocks` table; frontend reads via a `useContentBlock(key)` hook.
+- `/admin/notifications`: composer with title/body/link, audience selector (all users, specific user, role). Sends via edge function using service role to insert into `notifications`.
 
-## Interaction & motion
-
-- Framer‑motion for hero entrance, chapter transitions, and sticky stage parallax.
-- `IntersectionObserver` to drive chapter state (no heavy scroll libs).
-- Respect `prefers-reduced-motion` everywhere — fall back to instant transitions.
-- Cursor‑follow soft glow on the hero canvas (desktop only).
-- Image stage supports pinch/drag zoom on mobile via a lightweight gesture handler.
+### Sequence 4 — Analytics, Audit, Polish
+- `/admin/analytics`: revenue chart (day/week/month toggle), top products bar chart, category split donut, conversion funnel (visits → cart → checkout → paid using `analytics.ts` events stored in a new `events` table), low-stock alerts.
+- `/admin/audit`: filterable log of who changed what; diff viewer.
+- Audit triggers wired on products, variants, plants, orders.
+- Global keyboard shortcut `g a` to jump into admin; command palette entries for admin actions.
+- Empty states, loading skeletons, error boundaries, confirm dialogs on destructive actions.
+- E2E smoke test for admin product create→edit→delete flow.
 
 ## Technical notes
+- Edge functions needed:
+  - `admin-list-users` (service role, lists auth users + joins profiles/roles).
+  - `admin-set-role` (service role, validates caller is admin, inserts/deletes `user_roles`).
+  - `admin-broadcast-notification` (insert per recipient).
+  - `admin-export-orders` (CSV stream).
+  All validate caller via JWT + `has_role` check.
+- Reuse shadcn `Table`, `Sheet`, `Dialog`, `Form`, `Sidebar`, `Tabs`. Charts via `recharts` (already in project).
+- Image uploads: client-side resize to max 1600px, upload to `product-media`, store URL on `product_media` row.
+- All admin mutations call `audit-log` insert (or rely on DB triggers).
+- Strict zod validation on every form.
+- No payment / Stripe work in this plan — refunds are status-only.
 
-- New components (frontend only):
-  - `src/pages/ProductDetail.tsx` — rewritten as a thin orchestrator.
-  - `src/components/pdp/HeroStage.tsx`
-  - `src/components/pdp/StickyMediaStage.tsx` (chapters + pinned visual)
-  - `src/components/pdp/StickyBuyBar.tsx` (replaces `.pdp-sticky`)
-  - `src/components/pdp/FitInGarden.tsx` (uses `activeGarden`)
-  - `src/components/pdp/SpecsGrid.tsx`
-  - `src/components/pdp/StoryBand.tsx`
-  - `src/components/pdp/ReviewsBlock.tsx`
-  - `src/components/pdp/BundleRow.tsx`
-  - `src/components/pdp/ProductCarousel.tsx` (snap‑scroll)
-- Styling: extend `src/styles/app.css` with a scoped `.pdp-*` block; use existing tokens (`--ink-*`, `--mist-*`, `--serif`, `--r-lg`). No new color tokens unless needed for tinted backgrounds (derived at runtime via CSS `color-mix`).
-- Data: reuse current `products` query. If reviews table doesn't exist, the block self‑hides. Bundle picks deterministically from `related` so no schema change required.
-- Analytics: emit `pdp_view`, `pdp_chapter_view`, `pdp_fit_check`, `bundle_add` via existing `track()`.
-- SEO: keep `usePageMeta` + add JSON‑LD `Product` schema (name, description, price, availability, image gradient as og fallback).
-- Accessibility: each chapter is a `<section>` with heading; sticky bar has `role="region" aria-label`; motion gated by reduced‑motion.
-
-## Out of scope
-
-- No new database tables or migrations (reviews block degrades gracefully).
-- No backend / edge function changes.
-- No changes to cart, checkout, or webshop listing logic.
-
-## Deliverable
-
-A PDP that feels like a destination, not a form — ambitious motion, real garden context, and a buy bar that's always within reach.
+## Out of scope (future)
+- Real payment refunds, shipping label generation, multi-language content, A/B testing, customer segments beyond role.

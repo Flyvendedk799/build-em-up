@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          diff: Json | null
+          entity: string
+          entity_id: string | null
+          id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          diff?: Json | null
+          entity: string
+          entity_id?: string | null
+          id?: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          diff?: Json | null
+          entity?: string
+          entity_id?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
       chat_conversations: {
         Row: {
           created_at: string
@@ -72,6 +102,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      content_blocks: {
+        Row: {
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
       }
       devices: {
         Row: {
@@ -328,25 +379,37 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          notes: string | null
+          refunded_at: string | null
           shipping_address: Json | null
+          shipping_status: string
           status: string
           total_dkk: number
+          tracking_number: string | null
           user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
+          notes?: string | null
+          refunded_at?: string | null
           shipping_address?: Json | null
+          shipping_status?: string
           status?: string
           total_dkk: number
+          tracking_number?: string | null
           user_id: string
         }
         Update: {
           created_at?: string
           id?: string
+          notes?: string | null
+          refunded_at?: string | null
           shipping_address?: Json | null
+          shipping_status?: string
           status?: string
           total_dkk?: number
+          tracking_number?: string | null
           user_id?: string
         }
         Relationships: []
@@ -393,30 +456,69 @@ export type Database = {
         }
         Relationships: []
       }
+      product_media: {
+        Row: {
+          alt: string | null
+          created_at: string
+          id: string
+          is_primary: boolean
+          product_id: string
+          sort: number
+          url: string
+        }
+        Insert: {
+          alt?: string | null
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          product_id: string
+          sort?: number
+          url: string
+        }
+        Update: {
+          alt?: string | null
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          product_id?: string
+          sort?: number
+          url?: string
+        }
+        Relationships: []
+      }
       product_variants: {
         Row: {
           id: string
           in_stock: boolean
+          low_stock_threshold: number
           name: string
           price_dkk: number
           product_id: string
           sku: string | null
+          stock_qty: number
+          track_inventory: boolean
         }
         Insert: {
           id?: string
           in_stock?: boolean
+          low_stock_threshold?: number
           name: string
           price_dkk: number
           product_id: string
           sku?: string | null
+          stock_qty?: number
+          track_inventory?: boolean
         }
         Update: {
           id?: string
           in_stock?: boolean
+          low_stock_threshold?: number
           name?: string
           price_dkk?: number
           product_id?: string
           sku?: string | null
+          stock_qty?: number
+          track_inventory?: boolean
         }
         Relationships: [
           {
