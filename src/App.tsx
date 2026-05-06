@@ -29,7 +29,11 @@ const PlantCareAI = lazy(() => import("./pages/PlantCareAI.tsx"));
 const Account = lazy(() => import("./pages/Account.tsx"));
 const Checkout = lazy(() => import("./pages/Checkout.tsx"));
 const OrderConfirmation = lazy(() => import("./pages/OrderConfirmation.tsx"));
-const Admin = lazy(() => import("./pages/Admin.tsx"));
+const AdminLayout = lazy(() => import("./pages/admin/AdminLayout.tsx"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard.tsx"));
+const AdminProducts = lazy(() => import("./pages/admin/AdminProducts.tsx"));
+const AdminProductEditor = lazy(() => import("./pages/admin/AdminProductEditor.tsx"));
+const AdminStub = lazy(() => import("./pages/admin/AdminStub.tsx").then((m) => ({ default: m.AdminStub })));
 
 const queryClient = new QueryClient();
 
