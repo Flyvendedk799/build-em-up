@@ -206,6 +206,18 @@ export default function GardenSizer() {
         layout: { "text-field": ["get", "label"], "text-size": 11, "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"], "text-allow-overlap": true },
         paint: { "text-color": "#edcf95", "text-halo-color": "#14271d", "text-halo-width": 1.5 } });
     }
+    if (!map.getSource("snap")) {
+      map.addSource("snap", { type: "geojson", data: empty });
+      map.addLayer({ id: "snap-ring", type: "circle", source: "snap",
+        paint: { "circle-radius": 9, "circle-color": "transparent", "circle-stroke-color": "#fff7d6", "circle-stroke-width": 2 } });
+    }
+    if (!map.getSource("wand-area")) {
+      map.addSource("wand-area", { type: "geojson", data: empty });
+      map.addLayer({ id: "wand-area-fill", type: "fill", source: "wand-area",
+        paint: { "fill-color": "#edcf95", "fill-opacity": 0.08 } });
+      map.addLayer({ id: "wand-area-line", type: "line", source: "wand-area",
+        paint: { "line-color": "#edcf95", "line-width": 1.5, "line-dasharray": [2, 3], "line-opacity": 0.8 } });
+    }
     syncMap();
   }
 
