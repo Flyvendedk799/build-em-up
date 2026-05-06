@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Link, useNavigate } from "react-router-dom";
 
 import { unionRings, subtractRings, pixelDistance } from "@/lib/polygonOps";
+import PinpointSequence from "@/components/havemaaler/PinpointSequence";
 
 type Suggestion = { id: string; place_name: string; center: [number, number]; text: string };
 type LngLat = [number, number];
