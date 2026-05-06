@@ -9,6 +9,7 @@ type Profile = { name: string | null; address: string | null; postal_code: strin
 type Garden = { id: string; name: string; area_m2: number | null; address: string | null };
 type Order = { id: string; created_at: string; total_dkk: number; status: string };
 type Device = { id: string; name: string; kind: string; status: string; battery: number | null };
+type WishProduct = { id: string; slug: string; name: string; base_price_dkk: number; gradient: string | null; svg_art: string | null };
 
 export default function Account() {
   const { user, loading, signOut } = useAuth();
@@ -18,6 +19,7 @@ export default function Account() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [plantCount, setPlantCount] = useState(0);
+  const [wishProducts, setWishProducts] = useState<WishProduct[]>([]);
   const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
@@ -27,18 +29,29 @@ export default function Account() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [{ data: p }, { data: g }, { data: o }, { data: d }, { count }] = await Promise.all([
+      const [{ data: p }, { data: g }, { data: o }, { data: d }, { count }, { data: w }] = await Promise.all([
         supabase.from("profiles").select("name, address, postal_code").eq("id", user.id).maybeSingle(),
         supabase.from("gardens").select("id, name, area_m2, address").order("created_at", { ascending: false }),
         supabase.from("orders").select("id, created_at, total_dkk, status").order("created_at", { ascending: false }).limit(5),
         supabase.from("devices").select("id, name, kind, status, battery").order("created_at", { ascending: false }),
         supabase.from("user_plants").select("id", { count: "exact", head: true }),
+        supabase.from("wishlists").select("product_id"),
       ]);
       if (p) setProfile({ name: p.name ?? "", address: p.address ?? "", postal_code: p.postal_code ?? "" });
       setGardens(g ?? []);
       setOrders(o ?? []);
       setDevices(d ?? []);
       setPlantCount(count ?? 0);
+      const ids = (w ?? []).map((r: any) => r.product_id);
+      if (ids.length) {
+        const { data: prods } = await supabase
+          .from("products")
+          .select("id, slug, name, base_price_dkk, gradient, svg_art")
+          .in("id", ids);
+        setWishProducts((prods as WishProduct[]) || []);
+      } else {
+        setWishProducts([]);
+      }
     })();
   }, [user]);
 
