@@ -214,10 +214,13 @@ export default function GardenSizer() {
 
   function onMapClick(e: mapboxgl.MapMouseEvent) {
     const map = mapRef.current!;
-    const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
+    let ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
     const s = stateRef.current;
 
     if (s.mode === "wand") { runMagicWand(ll); return; }
+
+    // Snap when drawing or editing
+    if (s.mode === "draw" || s.mode === "exclude") ll = snapPoint(ll);
 
     if (s.mode === "edit") {
       // insert vertex on midpoint click
@@ -236,7 +239,6 @@ export default function GardenSizer() {
       return;
     }
 
-    // Drawing modes
     if (s.mode === "draw") {
       if (s.mainClosed) return;
       if (s.main.length >= 3) {
@@ -270,6 +272,20 @@ export default function GardenSizer() {
     }
   }
 
+  function onMapContextMenu(e: mapboxgl.MapMouseEvent) {
+    const s = stateRef.current;
+    if (s.mode !== "edit") return;
+    const map = mapRef.current!;
+    const feats = map.queryRenderedFeatures(e.point, { layers: ["vertices-circle"] });
+    const real = feats.find(f => !(f.properties as any)?.midpoint);
+    if (!real) return;
+    e.preventDefault();
+    const ring = (real.properties as any).ring as string;
+    const idx = (real.properties as any).idx as number;
+    deleteVertex(ring === "main" ? "main" : parseInt(ring, 10), idx);
+    if ((navigator as any).vibrate) (navigator as any).vibrate(20);
+  }
+
   function onMapMouseDown(e: mapboxgl.MapMouseEvent) {
     const s = stateRef.current; if (s.mode !== "edit") return;
     const map = mapRef.current!;
@@ -284,15 +300,23 @@ export default function GardenSizer() {
   }
 
   function onMapMove(e: mapboxgl.MapMouseEvent) {
-    setHover([e.lngLat.lng, e.lngLat.lat]);
+    const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
     const s = stateRef.current;
+    if (s.mode === "wand") setWandHoverPos(ll);
+    if (s.mode === "draw" || s.mode === "exclude") {
+      const snapped = snapPoint(ll);
+      setHover(snapped);
+    } else {
+      setHover(ll);
+    }
     if (s.draggingVertex) {
-      const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
+      let dragLL = ll;
+      if (s.mode === "edit") dragLL = snapPoint(ll);
       if (s.draggingVertex.ring === "main") {
-        setMain(p => p.map((v, i) => i === s.draggingVertex!.idx ? ll : v));
+        setMain(p => p.map((v, i) => i === s.draggingVertex!.idx ? dragLL : v));
       } else {
         const ri = s.draggingVertex.ring as number;
-        setExclusions(prev => prev.map((r, i) => i === ri ? r.map((v, j) => j === s.draggingVertex!.idx ? ll : v) : r));
+        setExclusions(prev => prev.map((r, i) => i === ri ? r.map((v, j) => j === s.draggingVertex!.idx ? dragLL : v) : r));
       }
     }
   }
