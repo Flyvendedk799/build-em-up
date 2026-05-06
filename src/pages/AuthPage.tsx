@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { toast } from "sonner";
 
@@ -15,6 +16,20 @@ export default function AuthPage({ initialMode }: { initialMode: Mode }) {
   const nav = useNavigate();
   const [params] = useSearchParams();
   const next = params.get("next") || "/konto";
+
+  async function googleSignIn() {
+    setBusy(true);
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin + next,
+    });
+    if (result.error) {
+      toast.error("Google login fejlede.");
+      setBusy(false);
+      return;
+    }
+    if (result.redirected) return;
+    nav(next);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
