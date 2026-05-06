@@ -1322,3 +1322,30 @@
 @media (max-width: 768px) {
   .pdp-sticky { display: flex; }
 }
+
+/* ============ CHECKOUT ============ */
+.checkout-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 32px;
+  padding-bottom: 100px;
+}
+@media (max-width: 900px) {
+  .checkout-grid { grid-template-columns: 1fr; }
+  .checkout-summary { position: static !important; }
+}
+.ship-opt {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(20,39,29,0.12);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color 200ms, background 200ms;
+}
+.ship-opt:hover { border-color: rgba(20,39,29,0.25); }
+.ship-opt input[type="radio"]:checked ~ * { color: var(--forest-900); }
+.ship-opt:has(input:checked) {
+  border-color: var(--forest-700);
+  background: rgba(20,39,29,0.03);
+}
