@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     // Fetch ortofoto via WMS in EPSG:4326 (BBOX order = minLat,minLng,maxLat,maxLng for v1.3)
     const [minLng, minLat, maxLng, maxLat] = bbox;
     const wms = `https://api.dataforsyningen.dk/orto_foraar_DAF?service=WMS&request=GetMap`
-      + `&version=1.3.0&layers=orto_foraar&styles=&format=image/jpeg&transparent=false`
+      + `&version=1.3.0&layers=orto_foraar&styles=&format=image/jpeg&transparent=FALSE`
       + `&width=${width}&height=${height}&crs=EPSG:4326`
       + `&bbox=${minLat},${minLng},${maxLat},${maxLng}&token=${dfToken}`;
 
