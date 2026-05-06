@@ -14,8 +14,6 @@ export default function Index() {
     return () => {
       cancelAnimationFrame(id);
       cleanup?.();
-      // Hide loader if still present
-      document.getElementById("hl-loader")?.remove();
     };
   }, []);
 
