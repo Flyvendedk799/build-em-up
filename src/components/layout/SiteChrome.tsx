@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useCart } from "@/lib/cart";
 import { useCommandPalette } from "@/components/CommandPalette";
+import { NotificationsBell } from "@/components/NotificationsBell";
+import { supabase } from "@/integrations/supabase/client";
 import { ShoppingCart, Search, User as UserIcon } from "lucide-react";
 
 function Logo() {
@@ -16,13 +19,24 @@ function Logo() {
 
 function AccountButton({ dark = false }: { dark?: boolean }) {
   const { user, loading } = useAuth();
+  const [avatar, setAvatar] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) { setAvatar(null); return; }
+    supabase.from("profiles").select("avatar_url").eq("id", user.id).maybeSingle().then(({ data }) => {
+      setAvatar(data?.avatar_url ?? null);
+    });
+  }, [user?.id]);
   if (loading) return null;
   if (user) {
     const name = (user.user_metadata?.name as string | undefined) || user.email?.split("@")[0] || "Konto";
     const initial = name.charAt(0).toUpperCase();
     return (
       <Link to="/konto" className="nav-account" aria-label={`Min konto (${name})`}>
-        <span className="nav-avatar">{initial}</span>
+        {avatar ? (
+          <img src={avatar} alt="" className="nav-avatar" style={{ objectFit: "cover" }} />
+        ) : (
+          <span className="nav-avatar">{initial}</span>
+        )}
         <span className="nav-account-name">{name}</span>
       </Link>
     );
@@ -64,6 +78,7 @@ export function SiteNav({ onDark = true }: { onDark?: boolean }) {
           <Search size={14} /> Søg
           <kbd className="nav-kbd">⌘K</kbd>
         </button>
+        <NotificationsBell />
         <CartButton />
         <AccountButton dark />
       </div>
@@ -95,6 +110,7 @@ export function AppNav({ active }: { active?: string }) {
           <Search size={14} /> Søg
           <kbd className="nav-kbd">⌘K</kbd>
         </button>
+        <NotificationsBell />
         <CartButton />
         <AccountButton />
       </div>

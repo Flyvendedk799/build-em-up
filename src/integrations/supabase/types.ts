@@ -236,6 +236,39 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          kind: string
+          link: string | null
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          link?: string | null
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          link?: string | null
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           id: string
@@ -455,6 +488,7 @@ export type Database = {
           latitude: number | null
           longitude: number | null
           name: string | null
+          onboarded_at: string | null
           postal_code: string | null
           updated_at: string
         }
@@ -466,6 +500,7 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           name?: string | null
+          onboarded_at?: string | null
           postal_code?: string | null
           updated_at?: string
         }
@@ -477,6 +512,7 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           name?: string | null
+          onboarded_at?: string | null
           postal_code?: string | null
           updated_at?: string
         }

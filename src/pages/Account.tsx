@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useActiveGarden } from "@/lib/activeGarden";
 import { toast } from "sonner";
 
-type Profile = { name: string | null; address: string | null; postal_code: string | null };
+type Profile = { name: string | null; address: string | null; postal_code: string | null; avatar_url: string | null };
 type Garden = { id: string; name: string; area_m2: number | null; address: string | null; thumbnail_url: string | null };
 type Order = { id: string; created_at: string; total_dkk: number; status: string };
 type Device = { id: string; name: string; kind: string; status: string; battery: number | null };
@@ -17,7 +17,8 @@ export default function Account() {
   const { user, loading, signOut } = useAuth();
   const nav = useNavigate();
   const { activeGardenId, setActive } = useActiveGarden();
-  const [profile, setProfile] = useState<Profile>({ name: "", address: "", postal_code: "" });
+  const [profile, setProfile] = useState<Profile>({ name: "", address: "", postal_code: "", avatar_url: null });
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [gardens, setGardens] = useState<Garden[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -34,14 +35,14 @@ export default function Account() {
     if (!user) return;
     (async () => {
       const [{ data: p }, { data: g }, { data: o }, { data: d }, { count }, { data: w }] = await Promise.all([
-        supabase.from("profiles").select("name, address, postal_code").eq("id", user.id).maybeSingle(),
+        supabase.from("profiles").select("name, address, postal_code, avatar_url").eq("id", user.id).maybeSingle(),
         supabase.from("gardens").select("id, name, area_m2, address, thumbnail_url").order("created_at", { ascending: false }),
         supabase.from("orders").select("id, created_at, total_dkk, status").order("created_at", { ascending: false }).limit(5),
         supabase.from("devices").select("id, name, kind, status, battery").order("created_at", { ascending: false }),
         supabase.from("user_plants").select("id", { count: "exact", head: true }),
         supabase.from("wishlists").select("product_id"),
       ]);
-      if (p) setProfile({ name: p.name ?? "", address: p.address ?? "", postal_code: p.postal_code ?? "" });
+      if (p) setProfile({ name: p.name ?? "", address: p.address ?? "", postal_code: p.postal_code ?? "", avatar_url: (p as any).avatar_url ?? null });
       const gardensList = g ?? [];
       setGardens(gardensList);
       setOrders(o ?? []);
@@ -84,6 +85,25 @@ export default function Account() {
     setSavingProfile(false);
     if (error) toast.error(error.message);
     else toast.success("Profil opdateret.");
+  }
+
+  async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f || !user) return;
+    if (f.size > 4 * 1024 * 1024) { toast.error("Billede er for stort (max 4 MB)."); return; }
+    setUploadingAvatar(true);
+    const ext = f.name.split(".").pop() || "jpg";
+    const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("avatars").upload(path, f, { contentType: f.type, upsert: true });
+    if (upErr) { toast.error(upErr.message); setUploadingAvatar(false); return; }
+    const { data: pub } = supabase.storage.from("avatars").getPublicUrl(path);
+    const url = pub.publicUrl;
+    const { error: updErr } = await supabase.from("profiles").update({ avatar_url: url }).eq("id", user.id);
+    if (updErr) { toast.error(updErr.message); setUploadingAvatar(false); return; }
+    setProfile((p) => ({ ...p, avatar_url: url }));
+    setUploadingAvatar(false);
+    toast.success("Profilbillede opdateret.");
+    e.target.value = "";
   }
 
   async function logout() {
@@ -216,6 +236,21 @@ export default function Account() {
 
           {/* Profile */}
           <Card title="Profil">
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18 }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 32, overflow: "hidden",
+                background: "var(--ink-50)", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 24, fontWeight: 600, color: "var(--forest-800)",
+              }}>
+                {profile.avatar_url ? (
+                  <img src={profile.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : ((profile.name || user.email || "?").charAt(0).toUpperCase())}
+              </div>
+              <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
+                {uploadingAvatar ? "Uploader…" : profile.avatar_url ? "Skift billede" : "Upload billede"}
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadAvatar} disabled={uploadingAvatar} />
+              </label>
+            </div>
             <form onSubmit={saveProfile} style={{ display: "grid", gap: 12 }}>
               <div className="field">
                 <label>Navn</label>
