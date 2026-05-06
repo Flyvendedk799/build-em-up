@@ -77,6 +77,7 @@ export function MobileTabBar() {
   const isHome = pathname === "/";
   const [visible, setVisible] = useState(!isHome);
   const cartCount = useCart((s) => s.count());
+  const openCart = useCart((s) => s.openCart);
   const openPalette = useCommandPalette((s) => s.open);
 
   useEffect(() => {
@@ -122,22 +123,36 @@ export function MobileTabBar() {
         </span>
         <span className="mtb-label">Søg</span>
       </button>
-      {items.map((it) => (
-        <Link
-          key={it.key}
-          to={it.to}
-          className={`mtb-item ${isActive(it.to) ? "is-active" : ""}`}
-          aria-label={it.label}
-        >
-          <span className="mtb-icon">
-            {it.icon}
-            {it.key === "cart" && cartCount > 0 && (
-              <span className="mtb-badge">{cartCount}</span>
-            )}
-          </span>
-          <span className="mtb-label">{it.label}</span>
-        </Link>
-      ))}
+      {items.map((it) => {
+        if (it.key === "cart") {
+          return (
+            <button
+              key={it.key}
+              type="button"
+              className={`mtb-item ${pathname === "/cart" ? "is-active" : ""}`}
+              onClick={openCart}
+              aria-label={it.label}
+            >
+              <span className="mtb-icon">
+                {it.icon}
+                {cartCount > 0 && <span className="mtb-badge">{cartCount}</span>}
+              </span>
+              <span className="mtb-label">{it.label}</span>
+            </button>
+          );
+        }
+        return (
+          <Link
+            key={it.key}
+            to={it.to}
+            className={`mtb-item ${isActive(it.to) ? "is-active" : ""}`}
+            aria-label={it.label}
+          >
+            <span className="mtb-icon">{it.icon}</span>
+            <span className="mtb-label">{it.label}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }
