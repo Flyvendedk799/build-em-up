@@ -78,6 +78,7 @@ export function SiteNav({ onDark = true }: { onDark?: boolean }) {
           <Search size={14} /> Søg
           <kbd className="nav-kbd">⌘K</kbd>
         </button>
+        <NotificationsBell />
         <CartButton />
         <AccountButton dark />
       </div>
@@ -109,6 +110,7 @@ export function AppNav({ active }: { active?: string }) {
           <Search size={14} /> Søg
           <kbd className="nav-kbd">⌘K</kbd>
         </button>
+        <NotificationsBell />
         <CartButton />
         <AccountButton />
       </div>
