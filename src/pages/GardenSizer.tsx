@@ -922,6 +922,19 @@ export default function GardenSizer() {
         )}
       </div>
       <SiteFooter />
+      {pinpointing && mapboxToken && (
+        <PinpointSequence
+          address={pinpointing.name}
+          center={pinpointing.center}
+          mapboxToken={mapboxToken}
+          ortoWmsTemplate={ortoCfg?.wmsTemplate ?? null}
+          onDone={() => {
+            setChosen({ name: pinpointing.name, center: pinpointing.center });
+            setStep(2);
+            setPinpointing(null);
+          }}
+        />
+      )}
     </>
   );
 }
