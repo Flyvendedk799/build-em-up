@@ -139,11 +139,34 @@ export default function Account() {
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
                 {orders.map(o => (
-                  <Row key={o.id}
-                    title={`Ordre #${o.id.slice(0, 8)}`}
-                    sub={`${fmtDate(o.created_at)} · ${o.status}`}
-                    right={`${fmt(o.total_dkk)} kr`}
-                  />
+                  <Link to={`/order/${o.id}`} key={o.id} style={{ textDecoration: "none" }}>
+                    <Row
+                      title={`Ordre #${o.id.slice(0, 8).toUpperCase()}`}
+                      sub={`${fmtDate(o.created_at)} · ${o.status}`}
+                      right={`${fmt(o.total_dkk)} kr`}
+                    />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Wishlist */}
+          <Card title="Favoritter" action={<Link to="/webshop" className="btn btn-ghost btn-sm">Til webshop</Link>}>
+            {wishProducts.length === 0 ? (
+              <Empty text="Du har ingen favoritter endnu." cta={{ to: "/webshop", label: "Find produkter" }} />
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {wishProducts.map(w => (
+                  <Link to={`/webshop/${w.slug}`} key={w.id} style={{ textDecoration: "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 10, background: "var(--ink-50)", borderRadius: 12 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 8, background: w.gradient || "var(--mist-100)", flex: "0 0 44px", overflow: "hidden" }}>
+                        {w.svg_art && <div dangerouslySetInnerHTML={{ __html: w.svg_art }} />}
+                      </div>
+                      <div style={{ flex: 1, fontSize: 14, color: "var(--ink-900)", fontWeight: 500 }}>{w.name}</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--forest-800)" }}>{fmt(w.base_price_dkk)} kr</div>
+                    </div>
+                  </Link>
                 ))}
               </div>
             )}
