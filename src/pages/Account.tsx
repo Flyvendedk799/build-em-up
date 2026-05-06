@@ -114,24 +114,49 @@ export default function Account() {
           <Stat label="Ordrer" value={String(orders.length)} link="/webshop" />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
-          {/* Gardens */}
-          <Card title="Mine haver" action={<Link to="/havemaaler" className="btn btn-ghost btn-sm">+ Ny opmåling</Link>}>
-            {gardens.length === 0 ? (
-              <Empty text="Ingen haver endnu — start med Havemåleren." cta={{ to: "/havemaaler", label: "Mål din have" }} />
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {gardens.map(g => (
-                  <Row key={g.id}
-                    title={g.name}
-                    sub={g.address ?? "—"}
-                    right={g.area_m2 ? `${fmt(Math.round(g.area_m2))} m²` : ""}
-                  />
-                ))}
-              </div>
-            )}
-          </Card>
+        {/* Min have hub — full width */}
+        <Card title="Min have" action={<Link to="/havemaaler" className="btn btn-ghost btn-sm">+ Ny opmåling</Link>}>
+          {gardens.length === 0 ? (
+            <Empty text="Ingen haver endnu — start med Havemåleren." cta={{ to: "/havemaaler", label: "Mål din have" }} />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
+              {gardens.map(g => {
+                const active = g.id === activeGardenId;
+                return (
+                  <div key={g.id} style={{
+                    border: active ? "2px solid var(--forest-800)" : "1px solid var(--ink-100)",
+                    borderRadius: 14, overflow: "hidden", background: "var(--paper)",
+                    display: "flex", flexDirection: "column",
+                  }}>
+                    <div style={{
+                      aspectRatio: "16/10",
+                      background: g.thumbnail_url ? `url(${g.thumbnail_url}) center/cover` : "linear-gradient(135deg, var(--forest-800), var(--ochre-600))",
+                    }} />
+                    <div style={{ padding: 14, flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ fontWeight: 600, fontSize: 15 }}>{g.name}</div>
+                      <div style={{ fontSize: 12, color: "var(--ink-500)" }}>{g.address ?? "—"}</div>
+                      <div style={{ display: "flex", gap: 10, fontSize: 12, color: "var(--ink-600)", marginTop: 4 }}>
+                        <span>{g.area_m2 ? `${fmt(Math.round(g.area_m2))} m²` : "—"}</span>
+                        <span>·</span>
+                        <span>{zoneCounts[g.id] || 0} zoner</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                        {active ? (
+                          <span className="btn btn-ghost btn-sm" style={{ pointerEvents: "none", color: "var(--forest-800)" }}>✓ Aktiv</span>
+                        ) : (
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setActive(g.id); toast.success(`${g.name} er nu aktiv`); }}>Brug denne</button>
+                        )}
+                        <Link to="/vanding" className="btn btn-ghost btn-sm">Vanding</Link>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
 
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start", marginTop: 24 }}>
           {/* Devices */}
           <Card title="Mine enheder" action={<Link to="/vanding" className="btn btn-ghost btn-sm">Konfigurer</Link>}>
             {devices.length === 0 ? (
