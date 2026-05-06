@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useCart } from "@/lib/cart";
+import { useCommandPalette } from "@/components/CommandPalette";
 
 const items = [
   {
@@ -36,22 +38,24 @@ const items = [
     ),
   },
   {
-    to: "/vanding",
-    key: "water",
-    label: "Vanding",
-    icon: (
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3s6 7 6 12a6 6 0 0 1-12 0c0-5 6-12 6-12z" />
-      </svg>
-    ),
-  },
-  {
     to: "/ai",
     key: "ai",
     label: "AI",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+      </svg>
+    ),
+  },
+  {
+    to: "/cart",
+    key: "cart",
+    label: "Kurv",
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="9" cy="20" r="1.4" />
+        <circle cx="17" cy="20" r="1.4" />
+        <path d="M3 4h2l2.5 12h11l2-8H6" />
       </svg>
     ),
   },
@@ -72,13 +76,14 @@ export function MobileTabBar() {
   const { pathname } = useLocation();
   const isHome = pathname === "/";
   const [visible, setVisible] = useState(!isHome);
+  const cartCount = useCart((s) => s.count());
+  const openPalette = useCommandPalette((s) => s.open);
 
   useEffect(() => {
     if (!isHome) {
       setVisible(true);
       return;
     }
-    // On home, only show once user has scrolled past the 3D stage sequence.
     setVisible(false);
     const onScroll = () => {
       const stage = document.querySelector<HTMLElement>(".stage");
@@ -87,7 +92,6 @@ export function MobileTabBar() {
         return;
       }
       const rect = stage.getBoundingClientRect();
-      // Stage finished when its bottom has scrolled above the viewport bottom.
       setVisible(rect.bottom <= window.innerHeight + 4);
     };
     onScroll();
@@ -104,6 +108,20 @@ export function MobileTabBar() {
       aria-label="Hovednavigation"
       aria-hidden={!visible}
     >
+      <button
+        type="button"
+        className="mtb-item mtb-search"
+        onClick={openPalette}
+        aria-label="Søg"
+      >
+        <span className="mtb-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+        </span>
+        <span className="mtb-label">Søg</span>
+      </button>
       {items.map((it) => (
         <Link
           key={it.key}
@@ -111,7 +129,12 @@ export function MobileTabBar() {
           className={`mtb-item ${isActive(it.to) ? "is-active" : ""}`}
           aria-label={it.label}
         >
-          <span className="mtb-icon">{it.icon}</span>
+          <span className="mtb-icon">
+            {it.icon}
+            {it.key === "cart" && cartCount > 0 && (
+              <span className="mtb-badge">{cartCount}</span>
+            )}
+          </span>
           <span className="mtb-label">{it.label}</span>
         </Link>
       ))}
