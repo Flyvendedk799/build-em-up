@@ -92,17 +92,21 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
         maxzoom: 22,
       },
     };
+    // Cap satellite at z19 so Mapbox doesn't request overzoomed/stretched tiles
+    sources.sat.maxzoom = 19;
     const layers: any[] = [
       {
         id: "sat-layer",
         type: "raster",
         source: "sat",
         paint: {
+          // Hand off to ortofoto earlier (and over a tighter window) so the
+          // pitched descent is always rendered from sharp source data.
           "raster-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            14, 1, 17, 0,
+            13, 1, 15.5, 0,
           ],
-          "raster-fade-duration": 600,
+          "raster-fade-duration": 300,
         },
       },
     ];
@@ -120,9 +124,9 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
         paint: {
           "raster-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            14, 0, 17, 1,
+            13, 0, 15.5, 1,
           ],
-          "raster-fade-duration": 600,
+          "raster-fade-duration": 300,
         },
       });
     }
