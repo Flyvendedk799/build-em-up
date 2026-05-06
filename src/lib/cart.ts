@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { track } from "@/lib/analytics";
 
 export type CartItem = {
   productId: string;
@@ -34,6 +35,12 @@ export const useCart = create<CartState>()(
       closeCart: () => set({ isOpen: false }),
       add: (item) =>
         set((s) => {
+          track("add_to_cart", {
+            productId: item.productId,
+            variantId: item.variantId,
+            qty: item.qty,
+            unitPriceDkk: item.unitPriceDkk,
+          });
           const idx = s.items.findIndex((i) => i.productId === item.productId && i.variantId === item.variantId);
           if (idx >= 0) {
             const copy = [...s.items];
