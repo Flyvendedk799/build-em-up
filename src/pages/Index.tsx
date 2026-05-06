@@ -1,17 +1,20 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { initScene } from "@/scene/scene.js";
 import { SiteNav, SiteFooter } from "@/components/layout/SiteChrome";
 
 export default function Index() {
   useEffect(() => {
     document.title = "Havelandet — Lev din have";
     let cleanup: undefined | (() => void);
-    // Defer to next frame so DOM (canvas, .stage, etc.) is mounted
-    const id = requestAnimationFrame(() => {
-      cleanup = initScene() as unknown as () => void;
+    let cancelled = false;
+    // Lazy-load the heavy 3D scene only when the landing page mounts.
+    const id = requestAnimationFrame(async () => {
+      const mod = await import("@/scene/scene.js");
+      if (cancelled) return;
+      cleanup = mod.initScene() as unknown as () => void;
     });
     return () => {
+      cancelled = true;
       cancelAnimationFrame(id);
       cleanup?.();
     };
