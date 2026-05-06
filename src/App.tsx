@@ -58,6 +58,7 @@ const App = () => (
           <MobileTabBar />
           <CommandPalette />
           <MiniCart />
+          <OnboardingWizard />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
