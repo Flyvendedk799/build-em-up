@@ -8,11 +8,16 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Link, useNavigate } from "react-router-dom";
 
+import { unionRings, subtractRings, pixelDistance } from "@/lib/polygonOps";
+
 type Suggestion = { id: string; place_name: string; center: [number, number]; text: string };
 type LngLat = [number, number];
 type Ring = LngLat[];
 type Mode = "draw" | "exclude" | "edit" | "wand";
+type WandOp = "replace" | "add" | "subtract";
 type Imagery = "ortofoto" | "mapbox";
+
+const AUTOSAVE_KEY = "havemaaler:draft:v2";
 
 const TIERS = [
   { name: "Klipper R1 Mini",   tier: "Indgangsmodel", max: 600,  price: "6.299 kr",  battery: "90 min",  noise: "52 dB" },
@@ -47,7 +52,18 @@ export default function GardenSizer() {
 
   const [matrikel, setMatrikel] = useState<Ring | null>(null);
   const [wandLoading, setWandLoading] = useState(false);
+  const [wandOp, setWandOp] = useState<WandOp>("replace");
+  const [wandConfidence, setWandConfidence] = useState<number | null>(null);
+  const [wandBbox, setWandBbox] = useState<[number, number, number, number] | null>(null);
+  const [wandHoverPos, setWandHoverPos] = useState<LngLat | null>(null);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapIndicator, setSnapIndicator] = useState<LngLat | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // History (undo/redo)
+  type Snap = { main: Ring; mainClosed: boolean; exclusions: Ring[] };
+  const historyRef = useRef<{ past: Snap[]; future: Snap[] }>({ past: [], future: [] });
+  const skipHistoryRef = useRef(false);
 
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -134,6 +150,7 @@ export default function GardenSizer() {
     map.on("mousedown", onMapMouseDown);
     map.on("mouseup", () => setDraggingVertex(null));
     map.on("dblclick", onMapDblClick);
+    map.on("contextmenu", onMapContextMenu);
 
     return () => {
       map.remove();
@@ -189,6 +206,18 @@ export default function GardenSizer() {
         layout: { "text-field": ["get", "label"], "text-size": 11, "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"], "text-allow-overlap": true },
         paint: { "text-color": "#edcf95", "text-halo-color": "#14271d", "text-halo-width": 1.5 } });
     }
+    if (!map.getSource("snap")) {
+      map.addSource("snap", { type: "geojson", data: empty });
+      map.addLayer({ id: "snap-ring", type: "circle", source: "snap",
+        paint: { "circle-radius": 9, "circle-color": "transparent", "circle-stroke-color": "#fff7d6", "circle-stroke-width": 2 } });
+    }
+    if (!map.getSource("wand-area")) {
+      map.addSource("wand-area", { type: "geojson", data: empty });
+      map.addLayer({ id: "wand-area-fill", type: "fill", source: "wand-area",
+        paint: { "fill-color": "#edcf95", "fill-opacity": 0.08 } });
+      map.addLayer({ id: "wand-area-line", type: "line", source: "wand-area",
+        paint: { "line-color": "#edcf95", "line-width": 1.5, "line-dasharray": [2, 3], "line-opacity": 0.8 } });
+    }
     syncMap();
   }
 
@@ -198,10 +227,13 @@ export default function GardenSizer() {
 
   function onMapClick(e: mapboxgl.MapMouseEvent) {
     const map = mapRef.current!;
-    const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
+    let ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
     const s = stateRef.current;
 
     if (s.mode === "wand") { runMagicWand(ll); return; }
+
+    // Snap when drawing or editing
+    if (s.mode === "draw" || s.mode === "exclude") ll = snapPoint(ll);
 
     if (s.mode === "edit") {
       // insert vertex on midpoint click
@@ -220,7 +252,6 @@ export default function GardenSizer() {
       return;
     }
 
-    // Drawing modes
     if (s.mode === "draw") {
       if (s.mainClosed) return;
       if (s.main.length >= 3) {
@@ -254,6 +285,20 @@ export default function GardenSizer() {
     }
   }
 
+  function onMapContextMenu(e: mapboxgl.MapMouseEvent) {
+    const s = stateRef.current;
+    if (s.mode !== "edit") return;
+    const map = mapRef.current!;
+    const feats = map.queryRenderedFeatures(e.point, { layers: ["vertices-circle"] });
+    const real = feats.find(f => !(f.properties as any)?.midpoint);
+    if (!real) return;
+    e.preventDefault();
+    const ring = (real.properties as any).ring as string;
+    const idx = (real.properties as any).idx as number;
+    deleteVertex(ring === "main" ? "main" : parseInt(ring, 10), idx);
+    if ((navigator as any).vibrate) (navigator as any).vibrate(20);
+  }
+
   function onMapMouseDown(e: mapboxgl.MapMouseEvent) {
     const s = stateRef.current; if (s.mode !== "edit") return;
     const map = mapRef.current!;
@@ -268,15 +313,23 @@ export default function GardenSizer() {
   }
 
   function onMapMove(e: mapboxgl.MapMouseEvent) {
-    setHover([e.lngLat.lng, e.lngLat.lat]);
+    const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
     const s = stateRef.current;
+    if (s.mode === "wand") setWandHoverPos(ll);
+    if (s.mode === "draw" || s.mode === "exclude") {
+      const snapped = snapPoint(ll);
+      setHover(snapped);
+    } else {
+      setHover(ll);
+    }
     if (s.draggingVertex) {
-      const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
+      let dragLL = ll;
+      if (s.mode === "edit") dragLL = snapPoint(ll);
       if (s.draggingVertex.ring === "main") {
-        setMain(p => p.map((v, i) => i === s.draggingVertex!.idx ? ll : v));
+        setMain(p => p.map((v, i) => i === s.draggingVertex!.idx ? dragLL : v));
       } else {
         const ri = s.draggingVertex.ring as number;
-        setExclusions(prev => prev.map((r, i) => i === ri ? r.map((v, j) => j === s.draggingVertex!.idx ? ll : v) : r));
+        setExclusions(prev => prev.map((r, i) => i === ri ? r.map((v, j) => j === s.draggingVertex!.idx ? dragLL : v) : r));
       }
     }
   }
@@ -369,9 +422,29 @@ export default function GardenSizer() {
       });
     }
     (map.getSource("matrikel") as mapboxgl.GeoJSONSource)?.setData(matrData);
+
+    // Snap indicator
+    const snapData: any = { type: "FeatureCollection", features: [] };
+    if (snapIndicator) snapData.features.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: snapIndicator } });
+    (map.getSource("snap") as mapboxgl.GeoJSONSource)?.setData(snapData);
+
+    // Wand area preview / analyzed bbox
+    const wandData: any = { type: "FeatureCollection", features: [] };
+    const previewBbox = mode === "wand" && wandHoverPos ? (() => {
+      const m = 45 / 111320; const lng = 45 / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
+      return [wandHoverPos[0] - lng, wandHoverPos[1] - m, wandHoverPos[0] + lng, wandHoverPos[1] + m] as [number, number, number, number];
+    })() : (mode === "wand" ? wandBbox : null);
+    if (previewBbox) {
+      const [w, s, e, n] = previewBbox;
+      wandData.features.push({
+        type: "Feature", properties: {},
+        geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
+      });
+    }
+    (map.getSource("wand-area") as mapboxgl.GeoJSONSource)?.setData(wandData);
   }
 
-  useEffect(() => { syncMap(); }, [main, mainClosed, exclusions, currentExclusion, hover, mode, matrikel]);
+  useEffect(() => { syncMap(); }, [main, mainClosed, exclusions, currentExclusion, hover, mode, matrikel, snapIndicator, wandHoverPos, wandBbox]);
 
   // ----- Area / perimeter (with exclusions subtracted) -----
   const { area, perim } = useMemo(() => {
@@ -392,25 +465,73 @@ export default function GardenSizer() {
 
   const tier = TIERS.find((t) => area <= t.max) ?? TIERS[TIERS.length - 1];
 
-  // ----- Tools -----
-  function undo() {
-    if (mode === "exclude" && currentExclusion.length) {
-      setCurrentExclusion(p => p.slice(0, -1)); return;
-    }
-    if (mainClosed) { setMainClosed(false); return; }
-    setMain(p => p.slice(0, -1));
+  // ----- History (undo/redo) -----
+  type Snap2 = { main: Ring; mainClosed: boolean; exclusions: Ring[] };
+  const lastSerialized = useRef<string>("");
+  function applySnap(s: Snap2) {
+    skipHistoryRef.current = true;
+    setMain(s.main); setMainClosed(s.mainClosed); setExclusions(s.exclusions);
+    requestAnimationFrame(() => { skipHistoryRef.current = false; });
   }
+  function undo() {
+    const h = historyRef.current;
+    if (!h.past.length) return;
+    h.future.push({ main: [...main], mainClosed, exclusions: exclusions.map(r => [...r]) });
+    applySnap(h.past.pop()!);
+  }
+  function redo() {
+    const h = historyRef.current;
+    if (!h.future.length) return;
+    h.past.push({ main: [...main], mainClosed, exclusions: exclusions.map(r => [...r]) });
+    applySnap(h.future.pop()!);
+  }
+  useEffect(() => {
+    const ser = JSON.stringify({ main, mainClosed, exclusions });
+    if (ser === lastSerialized.current) return;
+    if (!skipHistoryRef.current && lastSerialized.current) {
+      try {
+        historyRef.current.past.push(JSON.parse(lastSerialized.current));
+        if (historyRef.current.past.length > 50) historyRef.current.past.shift();
+        historyRef.current.future = [];
+      } catch {}
+    }
+    lastSerialized.current = ser;
+  }, [main, mainClosed, exclusions]);
+
   function clear() {
     setMain([]); setMainClosed(false); setExclusions([]); setCurrentExclusion([]);
+    setWandConfidence(null); setWandBbox(null);
+  }
+
+  // ----- Snap helper -----
+  function snapPoint(ll: LngLat): LngLat {
+    if (!snapEnabled) return ll;
+    const map = mapRef.current; if (!map) return ll;
+    const candidates: LngLat[] = [];
+    main.forEach(p => candidates.push(p));
+    exclusions.forEach(r => r.forEach(p => candidates.push(p)));
+    if (matrikel) matrikel.forEach(p => candidates.push(p));
+    let best: { p: LngLat; d: number } | null = null;
+    for (const c of candidates) {
+      const d = pixelDistance(map, ll, c);
+      if (d < 12 && (!best || d < best.d)) best = { p: c, d };
+    }
+    if (best) { setSnapIndicator(best.p); return best.p; }
+    setSnapIndicator(null);
+    return ll;
+  }
+
+  function deleteVertex(ring: "main" | number, idx: number) {
+    if (ring === "main") {
+      setMain(p => p.length > 3 ? p.filter((_, i) => i !== idx) : p);
+    } else {
+      setExclusions(prev => prev.map((r, i) => i === ring ? (r.length > 3 ? r.filter((_, j) => j !== idx) : r) : r));
+    }
   }
 
   // ----- Matrikel lookup -----
   async function loadMatrikel() {
     if (!chosen) return;
-    const { data, error } = await supabase.functions.invoke("get-matrikel", {
-      body: null,
-    } as any).catch(() => ({ data: null, error: true }));
-    // invoke doesn't pass query params; use direct fetch with project URL instead
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-matrikel?lng=${chosen.center[0]}&lat=${chosen.center[1]}`;
     try {
       const r = await fetch(url, { headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY } });
@@ -418,7 +539,6 @@ export default function GardenSizer() {
       const feat = j?.features?.[0];
       const coords = feat?.geometry?.coordinates;
       if (!coords) { toast("Ingen matrikel fundet"); return; }
-      // Polygon or MultiPolygon — take outer ring of first polygon
       const outer: LngLat[] = (coords[0][0] && Array.isArray(coords[0][0][0])) ? coords[0][0] : coords[0];
       setMatrikel(outer.map((p: any) => [p[0], p[1]]));
       toast.success("Matrikel hentet");
@@ -433,25 +553,38 @@ export default function GardenSizer() {
 
   // ----- Magic wand (AI) -----
   async function runMagicWand(click: LngLat) {
-    const map = mapRef.current; if (!map) return;
-    const b = map.getBounds();
-    const bbox: [number, number, number, number] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
     setWandLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("segment-lawn", {
-        body: { bbox, click, width: 768, height: 768 },
+        body: { click, cropMeters: 90, width: 768, height: 768 },
       });
-      if (error || !data?.polygon) { toast.error("AI-opmåling fejlede"); return; }
-      const ring = (data.polygon as LngLat[]);
-      // simplify
+      if (error || !data?.polygon) {
+        const msg = (error as any)?.message || "";
+        toast.error(msg.includes("402") ? "AI-kreditter brugt op" : msg.includes("429") ? "Travl gateway — prøv igen om lidt" : "AI-opmåling fejlede");
+        return;
+      }
+      const ring = data.polygon as LngLat[];
+      let simplified: LngLat[] = ring;
       try {
         const simp = turf.simplify(turf.polygon([[...ring, ring[0]]]), { tolerance: 0.00001, highQuality: true });
-        const coords = simp.geometry.coordinates[0].slice(0, -1) as LngLat[];
-        setMain(coords); setMainClosed(true); setMode("edit");
-      } catch {
-        setMain(ring); setMainClosed(true); setMode("edit");
+        simplified = simp.geometry.coordinates[0].slice(0, -1) as LngLat[];
+      } catch {}
+
+      if (wandOp === "add" && main.length >= 3 && mainClosed) {
+        const merged = unionRings(main, simplified);
+        if (merged) setMain(merged); else toast("Områderne overlapper ikke");
+      } else if (wandOp === "subtract" && main.length >= 3 && mainClosed) {
+        const sub = subtractRings(main, simplified);
+        if (sub) setMain(sub); else toast("Kunne ikke trække fra");
+      } else {
+        setMain(simplified); setMainClosed(true); setMode("edit");
       }
-      toast.success(data.cached ? "Hentet fra cache" : "AI-forslag klar — juster om nødvendigt");
+      setWandConfidence(data.confidence ?? null);
+      setWandBbox(data.bbox ?? null);
+      const conf = Math.round((data.confidence ?? 0.7) * 100);
+      toast.success(data.cached ? "Hentet fra cache" : `AI-forslag klar (${conf}% sikker)`);
+    } catch {
+      toast.error("AI-opmåling fejlede");
     } finally { setWandLoading(false); }
   }
 
@@ -459,22 +592,64 @@ export default function GardenSizer() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (step !== 2) return;
-      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
-      if (e.key === "z" || e.key === "Z") { e.preventDefault(); undo(); }
-      else if (e.key === "Escape") {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && (e.key === "z" || e.key === "Z") && !e.shiftKey) { e.preventDefault(); undo(); return; }
+      if (meta && ((e.key === "z" || e.key === "Z") && e.shiftKey || e.key === "y" || e.key === "Y")) { e.preventDefault(); redo(); return; }
+      if (e.key === "z" || e.key === "Z") { e.preventDefault(); undo(); return; }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (mode === "exclude" && currentExclusion.length) { setCurrentExclusion(p => p.slice(0, -1)); e.preventDefault(); }
+        else if (mode === "draw" && main.length && !mainClosed) { setMain(p => p.slice(0, -1)); e.preventDefault(); }
+        return;
+      }
+      if (e.key === "Escape") {
         if (mode === "exclude" && currentExclusion.length) setCurrentExclusion([]);
         else if (!mainClosed) setMain([]);
-      }
-      else if (e.key === "Enter") {
+      } else if (e.key === "Enter") {
         if (mode === "draw" && main.length >= 3 && !mainClosed) setMainClosed(true);
         else if (mode === "exclude" && currentExclusion.length >= 3) {
           setExclusions(prev => [...prev, currentExclusion]); setCurrentExclusion([]);
         }
-      }
+      } else if (e.key === "1") setMode("draw");
+      else if (e.key === "2") setMode("edit");
+      else if (e.key === "3") setMode("exclude");
+      else if (e.key === "4") setMode("wand");
+      else if (e.key === "s" || e.key === "S") setSnapEnabled(v => !v);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, mode, main, mainClosed, currentExclusion]);
+  }, [step, mode, main, mainClosed, currentExclusion, exclusions]);
+
+  // ----- Autosave to localStorage -----
+  useEffect(() => {
+    if (step !== 2 || !chosen) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+          chosen, main, mainClosed, exclusions, imagery, savedAt: Date.now(),
+        }));
+      } catch {}
+    }, 800);
+    return () => clearTimeout(t);
+  }, [step, chosen, main, mainClosed, exclusions, imagery]);
+
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (!d?.chosen || Date.now() - (d.savedAt ?? 0) > 1000 * 60 * 60 * 24 * 3) return;
+      setChosen(d.chosen);
+      setMain(d.main ?? []); setMainClosed(!!d.mainClosed);
+      setExclusions(d.exclusions ?? []);
+      if (d.imagery) setImagery(d.imagery);
+      setStep(2);
+      toast("Gendannet kladde", { description: "Din tidligere måling er hentet frem" });
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ----- Save -----
   async function saveGarden() {
@@ -516,12 +691,14 @@ export default function GardenSizer() {
     });
     const { useActiveGarden } = await import("@/lib/activeGarden");
     useActiveGarden.getState().setActive(g.id);
+    try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
     toast.success("Have gemt"); navigate("/konto");
   }
 
   // ----- Render -----
   return (
     <>
+      <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}`}</style>
       <AppNav active="sizer" />
       <div className="container">
         <header className="page-head">
@@ -637,32 +814,71 @@ export default function GardenSizer() {
                   <div className="help" style={{ zIndex: 2 }}>
                     <span className="dot"></span>
                     <span>
-                      {mode === "wand" ? (wandLoading ? "AI analyserer…" : "Klik på græsset for at lade AI'en spore plænen")
-                        : mode === "edit" ? "Træk hjørner. Klik et lille punkt på en kant for at indsætte nyt hjørne."
-                        : mode === "exclude" ? "Tegn et område der skal trækkes fra (terrasse, bed). Dobbeltklik for at lukke."
-                        : mainClosed ? "Færdig — gem din have, eller skift til Rediger for at justere."
-                        : "Klik for hjørner. Klik første punkt eller dobbeltklik for at lukke. (Z=fortryd, Enter=luk)"}
+                      {mode === "wand" ? (wandLoading ? "AI analyserer plænen…" : wandOp === "add" ? "Klik for at TILFØJE et område til plænen" : wandOp === "subtract" ? "Klik for at TRÆKKE et område fra plænen" : "Klik midt på græsset — AI sporer plænen automatisk")
+                        : mode === "edit" ? "Træk hjørner. Klik et lille punkt for at indsætte. Højreklik = slet hjørne."
+                        : mode === "exclude" ? "Tegn et område der trækkes fra (terrasse, bed). Dobbeltklik for at lukke."
+                        : mainClosed ? "Færdig — gem din have, eller skift til Rediger."
+                        : "Klik for hjørner. Luk ved at klikke første punkt eller Enter. (Cmd/Ctrl+Z = fortryd, S = snap, Del = slet sidste)"}
                     </span>
                   </div>
+
+                  {/* Loading overlay */}
+                  {wandLoading && (
+                    <div style={{ position: "absolute", inset: 0, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(20,39,29,0.35)", backdropFilter: "blur(2px)", borderRadius: "inherit", pointerEvents: "none" }}>
+                      <div style={{ background: "rgba(20,39,29,0.85)", border: "1px solid var(--gold)", color: "var(--gold)", padding: "14px 22px", borderRadius: 12, fontSize: 13, letterSpacing: 0.4, fontFamily: "JetBrains Mono, monospace", display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--gold)", animation: "pulse 1.2s ease-in-out infinite" }} />
+                        AI ANALYSERER · GEMINI 2.5 PRO
+                      </div>
+                    </div>
+                  )}
+
                   <div className="area-pill" style={{ zIndex: 2 }}>
                     <div>
                       <div className="lbl">Areal{exclusions.length ? ` (- ${exclusions.length} ekskl.)` : ""}</div>
                       <div>{area.toFixed(0)} m²</div>
                     </div>
+                    {wandConfidence != null && (
+                      <div style={{ marginTop: 4, fontSize: 10, color: "var(--gold)", letterSpacing: 0.5 }}>
+                        AI {Math.round(wandConfidence * 100)}% sikker
+                      </div>
+                    )}
                   </div>
+
                   <div className="tools" style={{ zIndex: 2, flexWrap: "wrap" }}>
-                    <button className={`tool-btn ${mode === "draw" ? "is-active" : ""}`} onClick={() => setMode("draw")}>Tegn</button>
-                    <button className={`tool-btn ${mode === "edit" ? "is-active" : ""}`} onClick={() => setMode("edit")} disabled={!main.length}>Rediger</button>
-                    <button className={`tool-btn ${mode === "exclude" ? "is-active" : ""}`} onClick={() => setMode("exclude")} disabled={!mainClosed}>− Udeluk</button>
-                    <button className={`tool-btn ${mode === "wand" ? "is-active" : ""}`} onClick={() => setMode("wand")} disabled={wandLoading}>{wandLoading ? "AI…" : "✨ AI-spor"}</button>
-                    <button className="tool-btn" onClick={undo}>Fortryd</button>
-                    <button className="tool-btn" onClick={clear}>Ryd</button>
+                    <button className={`tool-btn ${mode === "draw" ? "is-active" : ""}`} onClick={() => setMode("draw")} title="Tegn (1)">Tegn</button>
+                    <button className={`tool-btn ${mode === "edit" ? "is-active" : ""}`} onClick={() => setMode("edit")} disabled={!main.length} title="Rediger (2)">Rediger</button>
+                    <button className={`tool-btn ${mode === "exclude" ? "is-active" : ""}`} onClick={() => setMode("exclude")} disabled={!mainClosed} title="Udeluk (3)">− Udeluk</button>
+                    <button className={`tool-btn ${mode === "wand" ? "is-active" : ""}`} onClick={() => { setMode("wand"); setWandOp("replace"); }} disabled={wandLoading} title="AI-magic-wand (4)">{wandLoading ? "AI…" : "✨ AI"}</button>
+                    {mode === "wand" && mainClosed && (
+                      <>
+                        <button className={`tool-btn ${wandOp === "add" ? "is-active" : ""}`} onClick={() => setWandOp("add")} disabled={wandLoading} title="AI tilføj område">+ AI</button>
+                        <button className={`tool-btn ${wandOp === "subtract" ? "is-active" : ""}`} onClick={() => setWandOp("subtract")} disabled={wandLoading} title="AI træk fra">− AI</button>
+                      </>
+                    )}
+                    <button className="tool-btn" onClick={undo} title="Fortryd (Cmd+Z)">↶</button>
+                    <button className="tool-btn" onClick={redo} title="Gentag (Cmd+Shift+Z)">↷</button>
+                    <button className={`tool-btn ${snapEnabled ? "is-active" : ""}`} onClick={() => setSnapEnabled(v => !v)} title="Snap (S)">Snap</button>
+                    <button className="tool-btn" onClick={clear} title="Ryd alt">Ryd</button>
                   </div>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
                   <button className="tool-btn" onClick={loadMatrikel}>Hent matrikel</button>
                   {matrikel && <button className="tool-btn" onClick={useMatrikelAsBase}>Brug matrikel som plæne</button>}
+                  <button className="tool-btn" onClick={() => {
+                    if (!navigator.geolocation) { toast("Geolocation ikke tilgængelig"); return; }
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const c: LngLat = [pos.coords.longitude, pos.coords.latitude];
+                        setChosen({ name: "Min position", center: c });
+                        clear(); setMatrikel(null);
+                        if (mapRef.current) mapRef.current.flyTo({ center: c, zoom: 19 });
+                        toast.success("Centreret på din position");
+                      },
+                      () => toast.error("Kunne ikke hente position"),
+                      { enableHighAccuracy: true, timeout: 8000 },
+                    );
+                  }}>📍 Find mig</button>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginTop: 24 }}>
