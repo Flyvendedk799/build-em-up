@@ -57,15 +57,20 @@ Deno.serve(async (req) => {
     // Check cache via Supabase REST (anon)
     const supaUrl = Deno.env.get("SUPABASE_URL")!;
     const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const cacheRes = await fetch(
-      `${supaUrl}/rest/v1/lawn_segmentation_cache?bbox_hash=eq.${cacheKey}&select=polygon`,
-      { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } },
-    );
-    const cached = await cacheRes.json().catch(() => []);
-    if (Array.isArray(cached) && cached[0]?.polygon) {
-      return new Response(JSON.stringify({ polygon: cached[0].polygon, cached: true }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    try {
+      const cacheRes = await fetch(
+        `${supaUrl}/rest/v1/lawn_segmentation_cache?bbox_hash=eq.${cacheKey}&select=polygon`,
+        { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } },
+      );
+      const cacheTxt = await cacheRes.text();
+      const cached = cacheTxt ? JSON.parse(cacheTxt) : [];
+      if (Array.isArray(cached) && cached[0]?.polygon) {
+        return new Response(JSON.stringify({ polygon: cached[0].polygon, cached: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } catch (e) {
+      console.warn("cache lookup failed:", String(e));
     }
 
     // Fetch ortofoto via WMS in EPSG:4326 (BBOX order = minLat,minLng,maxLat,maxLng for v1.3)
@@ -75,15 +80,17 @@ Deno.serve(async (req) => {
       + `&width=${width}&height=${height}&crs=EPSG:4326`
       + `&bbox=${minLat},${minLng},${maxLat},${maxLng}&token=${dfToken}`;
 
+    console.log("fetching wms...");
     const imgRes = await fetch(wms);
+    console.log("wms status:", imgRes.status);
     if (!imgRes.ok) {
-      return new Response(JSON.stringify({ error: "ortofoto fetch failed", status: imgRes.status }), {
+      const t = await imgRes.text().catch(() => "");
+      return new Response(JSON.stringify({ error: "ortofoto fetch failed", status: imgRes.status, detail: t.slice(0,200) }), {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     const imgBuf = new Uint8Array(await imgRes.arrayBuffer());
     console.log("ortofoto bytes:", imgBuf.length);
-    // chunked base64 to avoid stack overflow with large images
     let bin = "";
     const CHUNK = 0x8000;
     for (let i = 0; i < imgBuf.length; i += CHUNK) {
