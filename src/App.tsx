@@ -20,6 +20,9 @@ import { MobileTabBar } from "./components/layout/MobileTabBar.tsx";
 import { ScrollToTop } from "./components/layout/ScrollToTop.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
 import { RouteTransition } from "./components/layout/RouteTransition.tsx";
+import { MiniCart } from "./components/MiniCart.tsx";
+import Checkout from "./pages/Checkout.tsx";
+import OrderConfirmation from "./pages/OrderConfirmation.tsx";
 
 const queryClient = new QueryClient();
 
@@ -44,11 +47,14 @@ const App = () => (
               <Route path="/vanding" element={<WateringPlan />} />
               <Route path="/ai" element={<PlantCareAI />} />
               <Route path="/konto" element={<Account />} />
+              <Route path="/checkout" element={<Checkout />} />
+              <Route path="/order/:id" element={<OrderConfirmation />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </RouteTransition>
           <MobileTabBar />
           <CommandPalette />
+          <MiniCart />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
