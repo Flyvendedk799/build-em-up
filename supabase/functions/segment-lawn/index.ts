@@ -23,7 +23,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+    console.log("segment-lawn req body length:", rawBody.length);
+    let body: any;
+    try { body = JSON.parse(rawBody || "{}"); }
+    catch (e) {
+      return new Response(JSON.stringify({ error: "invalid json body", raw: rawBody.slice(0,200) }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const { bbox, click, width = 768, height = 768 } = body as {
       bbox: [number, number, number, number]; // [minLng, minLat, maxLng, maxLat]
       click: [number, number];                // [lng, lat]
