@@ -8,11 +8,16 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Link, useNavigate } from "react-router-dom";
 
+import { unionRings, subtractRings, pixelDistance } from "@/lib/polygonOps";
+
 type Suggestion = { id: string; place_name: string; center: [number, number]; text: string };
 type LngLat = [number, number];
 type Ring = LngLat[];
 type Mode = "draw" | "exclude" | "edit" | "wand";
+type WandOp = "replace" | "add" | "subtract";
 type Imagery = "ortofoto" | "mapbox";
+
+const AUTOSAVE_KEY = "havemaaler:draft:v2";
 
 const TIERS = [
   { name: "Klipper R1 Mini",   tier: "Indgangsmodel", max: 600,  price: "6.299 kr",  battery: "90 min",  noise: "52 dB" },
