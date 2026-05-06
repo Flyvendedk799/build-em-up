@@ -83,6 +83,18 @@ export default function GardenSizer() {
     });
   }, []);
 
+  // ----- Pre-connect warm-up so the pinpoint overlay boots without a freeze -----
+  useEffect(() => {
+    const hosts = ["https://api.mapbox.com", "https://api.dataforsyningen.dk"];
+    const links: HTMLLinkElement[] = [];
+    hosts.forEach((href) => {
+      const l = document.createElement("link");
+      l.rel = "preconnect"; l.href = href; l.crossOrigin = "";
+      document.head.appendChild(l); links.push(l);
+    });
+    return () => { links.forEach((l) => l.remove()); };
+  }, []);
+
   // ----- Geocode (debounced) -----
   useEffect(() => {
     if (!mapboxToken || query.trim().length < 2) { setSuggestions([]); return; }

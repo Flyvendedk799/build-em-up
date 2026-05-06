@@ -1,73 +1,58 @@
-# Pinpoint v3.1 — Smoother & Longer
+## Two polish fixes for `PinpointSequence`
 
-Goal: make the cinematic pinpoint sequence feel **noticeably longer** and **buttery smooth**, especially on mobile. Total runtime grows from ~2.2s to ~5.5s, with no abrupt stage cuts.
+Both issues are in `src/components/havemaaler/PinpointSequence.tsx` (+ tiny CSS tweak). No changes to game logic, routing, or `GardenSizer` business code.
 
-## What's wrong today
+---
 
-- `flyTo` runs only 1500ms with `curve: 1.7, speed: 1.2` — on mobile this plays as one quick swoop with visible tile pop-in.
-- Stage timers are tight (180 → 320 → 1500 → 450 → 320 → 280 ms) so impact, settle and handoff stack on top of each other.
-- Handoff fade is 280ms and discards the map → user sees a flash before step 2 mounts its own map.
-- Easing `t => 1 - Math.pow(1 - t, 3)` (easeOutCubic) decelerates hard at the end → looks like it "stops" right before impact.
+### 1. Kill the ~0.7s freeze right after clicking the address
 
-## Changes
+**What's happening:** The instant `setPinpointing(...)` fires in `GardenSizer.chooseAddress`, React mounts `PinpointSequence`, which synchronously:
+- builds a Mapbox style object,
+- calls `new mapboxgl.Map(...)` (heavy: WebGL context creation, shader compile, worker spin-up),
+- waits for the first tile batch before the map's CSS opacity transitions from 0 → 1.
 
-### 1. Stretched, multi-phase camera path (PinpointSequence.tsx)
+During that work the main thread is busy, so the overlay itself appears late and the click feels frozen.
 
-Replace the single `flyTo` with a **3-leg choreographed descent** so the camera always feels alive:
+**Fix — instant overlay, deferred map boot:**
 
-```text
-intro      0      → 600   ms   fade map in, HUD slides in
-globe      600    → 1500  ms   slow bearing drift + zoom 4 → 7
-approach   1500   → 3300  ms   flyTo zoom 7 → 15, pitch 0 → 35
-descent    3300   → 4700  ms   easeTo zoom 15 → 18.7, pitch 35 → 60, bearing -10
-drop       4500   → 5050  ms   pin falls (overlaps tail of descent)
-impact     5050   → 5350  ms   shake + FX
-settle     5350   → 6000  ms   easeTo pitch/bearing → 0, gentle zoom nudge
-handoff    6000   → 6450  ms   crossfade out
-```
+1. Render the overlay chrome (`pp-stage`, aurora, vignette, HUD steps, address card, "Spring over") on the very first frame with map container empty. CSS fade of the dark backdrop + HUD slides in immediately so the click feels acknowledged within ~16ms.
+2. Defer the Mapbox `new Map(...)` call to the next frame using `requestAnimationFrame` (double-RAF) inside the mount effect. The browser paints the overlay before the heavy WebGL init runs.
+3. Add a new `booting` substate of `intro`. While booting, show a subtle "Finder adresse…" shimmer on the first HUD step (already designed) and a soft loader pulse over `pp-map` so the dark area doesn't look dead.
+4. Pre-warm the Mapbox token + satellite low-zoom tiles in `GardenSizer` the moment the user **opens** the suggestion dropdown (cheap `<link rel="preconnect">` to `api.mapbox.com` and `api.dataforsyningen.dk`, plus a single Image() fetch of a low-z satellite tile). This shaves the TLS handshake off the critical path.
+5. Trim `fadeDuration` on the map constructor from 600 → 300 so the first tile paint is snappier (we already cross-fade visually via CSS).
 
-- Use `cubic-bezier(.65,.05,.36,1)` style easing (`easeInOutCubic`) for legs so the deceleration is gentler at both ends.
-- Each leg uses `essential: true` and the next leg starts on `moveend` (not a fixed timer) so slow networks don't desync — fall back to a max timeout.
-- Pre-warm tiles: kick a hidden `Image()` request for the target tile during `intro` so the final zoom doesn't pop.
+Net result: the overlay is visible within one frame; the WebGL boot happens "behind" the already-visible UI, so the perceived freeze disappears.
 
-### 2. Smoother stage transitions (pinpoint.css)
+---
 
-- Bump CSS transitions from 280–500ms → **600–900ms** with `cubic-bezier(.22,.61,.36,1)` (Apple-style ease-out).
-- `.pp-map` opacity fade-in: 320ms → **700ms**.
-- Aurora/vignette/clouds opacity transitions: → **900ms**.
-- Pin drop: `transition: transform 0.65s` → **transform 1.0s `cubic-bezier(.55,.05,.35,1)`** (less abrupt landing).
-- Add `pp-stage[data-stage]` transition on `background-color` so the dark intro bleeds into the map color rather than cutting.
+### 2. Keep imagery sharp through every camera angle
 
-### 3. Seamless handoff (no flash)
+**What's happening:** During the `descent` leg (zoom 15 → 18.7, pitch 0 → 58), there's a window roughly between zoom 15.5 and 17 where:
+- `mapbox.satellite` is fading out (current interp `14→17`) and gets overzoomed/stretched at the steep pitch,
+- the Danish ortofoto hasn't loaded its higher-zoom tiles yet,
+- so the viewer sees a blurry frame for ~0.3–0.6s.
 
-- Currently `setFadingOut(true)` drops the whole overlay in 280ms while step 2 mounts a fresh Mapbox instance → visible flash on mobile.
-- New approach: extend fade to **600ms**, and during `settle` start an opacity tween of HUD/aurora/grain/vignette/skip/address-card to 0 **before** the map fades — so only the map remains, identical to step 2's view. Then fade `.pp-stage` out.
-- Make the impact camera-shake gentler (amplitudes halved) so it doesn't feel jarring when followed by a long settle.
+**Fix — extend sharp coverage and pre-load orto tiles:**
 
-### 4. Longer, gentler FX
+1. **Shift the cross-fade window earlier and tighter** in `buildStyle()`:
+   - satellite `raster-opacity`: `13 → 1`, `15.5 → 0` (was 14→17)
+   - orto `raster-opacity`: `13 → 0`, `15.5 → 1` (was 14→17)
+   This means the high-res Danish ortofoto is fully driving the view from zoom 15.5 onward — exactly when the camera starts pitching.
+2. **Bump satellite source `maxzoom` honesty:** keep `maxzoom: 19` (not 22) so Mapbox stops requesting overzoomed stretches; the orto layer takes over before that point anyway.
+3. **Pre-warm orto tiles for the destination** before the descent begins. As soon as `approach` starts, fetch a 3×3 grid of orto tiles around `center` at zoom 17 and 18 via hidden `Image()` requests (using the same WMS template). They land in HTTP cache so when Mapbox requests them during descent they paint instantly.
+4. **Hold for tiles before pitching:** add a `map.once('idle', …)` (with a 600ms safety timeout) at the *start* of the descent leg. Only after idle (or timeout) do we kick off the pitched `easeTo`. Guarantees we never pitch into half-loaded tiles.
+5. **Subtle blur-mask during the worst frame:** keep `pp-vignette` opacity slightly higher during `descent` (already there) and add a very light `backdrop-filter: blur(0.5px)` on the vignette edges only — masks any residual softness without affecting the centre where the pin lands.
 
-- Ripples: 1.6s → **2.2s**, stagger 0.18/0.36s → **0.25/0.5s**.
-- Dust: 0.95s → **1.4s**.
-- Shock flash: 0.7s → **0.9s**, lower peak opacity (1 → 0.8).
-- Sparkles: 0.95s → **1.3s**.
-- Pin float (settle/handoff): 3s → **4s** with smaller amplitude.
+---
 
-### 5. Mobile polish
+### Files touched
 
-- Detect `useIsMobile()` and shave 20% off durations on mobile so total stays ~4.5s instead of 5.5s (still much longer than today, but respects mobile attention).
-- Reduce `.pp-grain` opacity on mobile (perf + readability).
-- Disable `.pp-aurora` `filter: blur(40px)` on mobile (replace with pre-blurred radial via lower opacity) — big perf win that prevents jank during the longer animation.
+- `src/components/havemaaler/PinpointSequence.tsx` — deferred map boot, descent `idle` gate, orto prewarm, cross-fade ranges, `maxzoom`, `fadeDuration`.
+- `src/components/havemaaler/pinpoint.css` — booting shimmer state for the first HUD step + tiny vignette tweak.
+- `src/pages/GardenSizer.tsx` — add `<link rel="preconnect">` warm-up when the address suggestion list opens (~5 lines, presentation-only).
 
-### 6. Reduced-motion path
+### Risks / fallbacks
 
-Bump from 450ms hold to **900ms** so the address card and HUD are actually readable before handoff, but still no motion.
-
-## Files
-
-- **Edit** `src/components/havemaaler/PinpointSequence.tsx` — new stage timeline, multi-leg camera, mobile branch, tile pre-warm, staged HUD fade-out before map fade.
-- **Edit** `src/components/havemaaler/pinpoint.css` — longer/softer transitions and keyframes, mobile media-query overrides.
-
-## Risk / fallback
-
-- If chained `moveend` listeners desync on flaky networks, the max-timeout fallback fires the next leg anyway.
-- If the longer animation feels *too* long once you see it live, durations are centralized in a `TIMINGS` object at the top of the component so we can tune in one place.
+- `idle` event may not fire on flaky networks → the 600ms timeout guarantees the sequence always continues.
+- Pre-warm fetches are best-effort (no error handling needed; they just populate cache).
+- All timings stay within the existing `makeTimings` table so the overall ~5.5s rhythm is unchanged.

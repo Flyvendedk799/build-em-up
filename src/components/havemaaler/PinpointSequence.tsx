@@ -48,14 +48,50 @@ function makeTimings(mobile: boolean) {
   };
 }
 
+// Convert lng/lat to XYZ tile coords (Web Mercator)
+function lngLatToTile(lng: number, lat: number, z: number) {
+  const n = Math.pow(2, z);
+  const x = Math.floor(((lng + 180) / 360) * n);
+  const latRad = (lat * Math.PI) / 180;
+  const y = Math.floor(
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
+  );
+  return { x, y };
+}
+
+// Pre-fetch a 3x3 grid of ortofoto tiles at z17 + z18 around the destination
+// so they're warm in the HTTP cache before the cinematic descent reaches them.
+function prewarmOrtoTiles(template: string | null, center: [number, number]) {
+  if (!template) return;
+  const [lng, lat] = center;
+  for (const z of [17, 18]) {
+    const { x, y } = lngLatToTile(lng, lat, z);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const url = template
+          .replace("{z}", String(z))
+          .replace("{x}", String(x + dx))
+          .replace("{y}", String(y + dy));
+        // bbox-templated WMS URLs won't match — best-effort only
+        if (url.includes("{")) continue;
+        const img = new Image();
+        img.decoding = "async";
+        img.src = url;
+      }
+    }
+  }
+}
+
 export default function PinpointSequence({ address, center, mapboxToken, ortoWmsTemplate, onDone }: Props) {
   const [stage, setStage] = useState<Stage>("intro");
   const [calmDown, setCalmDown] = useState(false); // start hiding HUD/atmosphere before map fade
   const [fadingOut, setFadingOut] = useState(false);
   const [pinPx, setPinPx] = useState<{ x: number; y: number } | null>(null);
+  const [mapReady, setMapReady] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const timersRef = useRef<number[]>([]);
+  const rafRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
   const mobile = useIsMobile();
 
@@ -92,17 +128,21 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
         maxzoom: 22,
       },
     };
+    // Cap satellite at z19 so Mapbox doesn't request overzoomed/stretched tiles
+    sources.sat.maxzoom = 19;
     const layers: any[] = [
       {
         id: "sat-layer",
         type: "raster",
         source: "sat",
         paint: {
+          // Hand off to ortofoto earlier (and over a tighter window) so the
+          // pitched descent is always rendered from sharp source data.
           "raster-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            14, 1, 17, 0,
+            13, 1, 15.5, 0,
           ],
-          "raster-fade-duration": 600,
+          "raster-fade-duration": 300,
         },
       },
     ];
@@ -120,37 +160,54 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
         paint: {
           "raster-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            14, 0, 17, 1,
+            13, 0, 15.5, 1,
           ],
-          "raster-fade-duration": 600,
+          "raster-fade-duration": 300,
         },
       });
     }
     return { version: 8, sources, layers } as any;
   }
 
-  // Mount Mapbox
+  // Mount Mapbox — deferred to next frame so the overlay paints first
+  // (eliminates the perceived freeze right after clicking the address)
   useEffect(() => {
     if (!containerRef.current || !mapboxToken) return;
     mapboxgl.accessToken = mapboxToken;
 
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: buildStyle(),
-      center,
-      zoom: 3.6,
-      pitch: 0,
-      bearing: 0,
-      interactive: false,
-      attributionControl: false,
-      antialias: true,
-      fadeDuration: 600,
+    let map: mapboxgl.Map | null = null;
+    let cancelled = false;
+
+    // Double-RAF: wait for one paint of the overlay chrome before WebGL boot
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        if (cancelled || !containerRef.current) return;
+        map = new mapboxgl.Map({
+          container: containerRef.current,
+          style: buildStyle(),
+          center,
+          zoom: 3.6,
+          pitch: 0,
+          bearing: 0,
+          interactive: false,
+          attributionControl: false,
+          antialias: true,
+          fadeDuration: 300,
+        });
+        mapRef.current = map;
+        // Notify so the orchestration effect can attach its 'load' handler
+        setMapReady((n) => n + 1);
+      });
+      // store inner raf so we can cancel it
+      (rafRef.current as any) = raf2;
     });
-    mapRef.current = map;
+    rafRef.current = raf1;
 
     return () => {
+      cancelled = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       clearTimers();
-      try { map.remove(); } catch {}
+      try { map?.remove(); } catch {}
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,7 +226,7 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
     map.on("move", update);
     map.on("resize", update);
     return () => { map.off("move", update); map.off("resize", update); };
-  }, [center]);
+  }, [center, mapReady]);
 
   // Orchestrate stages
   useEffect(() => {
@@ -190,9 +247,20 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
+    // Wait until the map is idle (all tiles loaded) OR a safety timeout fires
+    const waitIdle = (maxMs: number) => new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => { if (done) return; done = true; map.off("idle", finish); resolve(); };
+      map.once("idle", finish);
+      window.setTimeout(finish, maxMs);
+    });
+
     map.once("load", () => {
       // INTRO — fade map in, HUD slides in
       setStage("intro");
+      // Pre-warm high-res ortofoto tiles around the destination so the
+      // descent (zoom 15.5 → 18.7) renders crisp on the very first frame.
+      prewarmOrtoTiles(ortoWmsTemplate, center);
 
       at(T.introHold, () => {
         // GLOBE — gentle drift + slight zoom
@@ -219,7 +287,10 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
             easing: easeInOutCubic,
           });
 
-          at(T.approachDur, () => {
+          at(T.approachDur, async () => {
+            // Hold briefly for ortofoto tiles to load before pitching steeply.
+            // Guarantees the descent never renders against blurry/missing tiles.
+            await waitIdle(600);
             // DESCENT — slow easeTo into the property
             setStage("descent");
             map.easeTo({
@@ -259,7 +330,7 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobile]);
+  }, [mobile, mapReady]);
 
   // Esc to skip
   useEffect(() => {
