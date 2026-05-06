@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useCart } from "@/lib/cart";
 import { useCommandPalette } from "@/components/CommandPalette";
+import { NotificationsBell } from "@/components/NotificationsBell";
+import { supabase } from "@/integrations/supabase/client";
 import { ShoppingCart, Search, User as UserIcon } from "lucide-react";
 
 function Logo() {
