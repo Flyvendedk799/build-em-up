@@ -19,12 +19,25 @@ const STARTERS = [
 
 export default function PlantCareAI() {
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [conversations, setConversations] = useState<Conv[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) { toast.error("Billede er for stort (max 8 MB)."); return; }
+    const reader = new FileReader();
+    reader.onload = () => setPendingImage(reader.result as string);
+    reader.readAsDataURL(f);
+    e.target.value = "";
+  }
 
   useEffect(() => {
     if (user) loadConversations();
