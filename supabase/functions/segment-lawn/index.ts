@@ -82,14 +82,22 @@ Deno.serve(async (req) => {
 
     console.log("fetching wms...");
     const imgRes = await fetch(wms);
-    console.log("wms status:", imgRes.status);
+    console.log("wms status:", imgRes.status, "ct:", imgRes.headers.get("content-type"), "cl:", imgRes.headers.get("content-length"), "ce:", imgRes.headers.get("content-encoding"));
     if (!imgRes.ok) {
       const t = await imgRes.text().catch(() => "");
       return new Response(JSON.stringify({ error: "ortofoto fetch failed", status: imgRes.status, detail: t.slice(0,200) }), {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const imgBuf = new Uint8Array(await imgRes.arrayBuffer());
+    let imgBuf: Uint8Array;
+    try {
+      imgBuf = new Uint8Array(await imgRes.arrayBuffer());
+    } catch (e) {
+      console.error("arrayBuffer failed:", String(e));
+      return new Response(JSON.stringify({ error: "ortofoto read failed", detail: String(e) }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     console.log("ortofoto bytes:", imgBuf.length);
     let bin = "";
     const CHUNK = 0x8000;
