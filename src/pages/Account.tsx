@@ -217,6 +217,21 @@ export default function Account() {
 
           {/* Profile */}
           <Card title="Profil">
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18 }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 32, overflow: "hidden",
+                background: "var(--ink-50)", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 24, fontWeight: 600, color: "var(--forest-800)",
+              }}>
+                {profile.avatar_url ? (
+                  <img src={profile.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : ((profile.name || user.email || "?").charAt(0).toUpperCase())}
+              </div>
+              <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
+                {uploadingAvatar ? "Uploader…" : profile.avatar_url ? "Skift billede" : "Upload billede"}
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadAvatar} disabled={uploadingAvatar} />
+              </label>
+            </div>
             <form onSubmit={saveProfile} style={{ display: "grid", gap: 12 }}>
               <div className="field">
                 <label>Navn</label>
