@@ -812,32 +812,71 @@ export default function GardenSizer() {
                   <div className="help" style={{ zIndex: 2 }}>
                     <span className="dot"></span>
                     <span>
-                      {mode === "wand" ? (wandLoading ? "AI analyserer…" : "Klik på græsset for at lade AI'en spore plænen")
-                        : mode === "edit" ? "Træk hjørner. Klik et lille punkt på en kant for at indsætte nyt hjørne."
-                        : mode === "exclude" ? "Tegn et område der skal trækkes fra (terrasse, bed). Dobbeltklik for at lukke."
-                        : mainClosed ? "Færdig — gem din have, eller skift til Rediger for at justere."
-                        : "Klik for hjørner. Klik første punkt eller dobbeltklik for at lukke. (Z=fortryd, Enter=luk)"}
+                      {mode === "wand" ? (wandLoading ? "AI analyserer plænen…" : wandOp === "add" ? "Klik for at TILFØJE et område til plænen" : wandOp === "subtract" ? "Klik for at TRÆKKE et område fra plænen" : "Klik midt på græsset — AI sporer plænen automatisk")
+                        : mode === "edit" ? "Træk hjørner. Klik et lille punkt for at indsætte. Højreklik = slet hjørne."
+                        : mode === "exclude" ? "Tegn et område der trækkes fra (terrasse, bed). Dobbeltklik for at lukke."
+                        : mainClosed ? "Færdig — gem din have, eller skift til Rediger."
+                        : "Klik for hjørner. Luk ved at klikke første punkt eller Enter. (Cmd/Ctrl+Z = fortryd, S = snap, Del = slet sidste)"}
                     </span>
                   </div>
+
+                  {/* Loading overlay */}
+                  {wandLoading && (
+                    <div style={{ position: "absolute", inset: 0, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(20,39,29,0.35)", backdropFilter: "blur(2px)", borderRadius: "inherit", pointerEvents: "none" }}>
+                      <div style={{ background: "rgba(20,39,29,0.85)", border: "1px solid var(--gold)", color: "var(--gold)", padding: "14px 22px", borderRadius: 12, fontSize: 13, letterSpacing: 0.4, fontFamily: "JetBrains Mono, monospace", display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--gold)", animation: "pulse 1.2s ease-in-out infinite" }} />
+                        AI ANALYSERER · GEMINI 2.5 PRO
+                      </div>
+                    </div>
+                  )}
+
                   <div className="area-pill" style={{ zIndex: 2 }}>
                     <div>
                       <div className="lbl">Areal{exclusions.length ? ` (- ${exclusions.length} ekskl.)` : ""}</div>
                       <div>{area.toFixed(0)} m²</div>
                     </div>
+                    {wandConfidence != null && (
+                      <div style={{ marginTop: 4, fontSize: 10, color: "var(--gold)", letterSpacing: 0.5 }}>
+                        AI {Math.round(wandConfidence * 100)}% sikker
+                      </div>
+                    )}
                   </div>
+
                   <div className="tools" style={{ zIndex: 2, flexWrap: "wrap" }}>
-                    <button className={`tool-btn ${mode === "draw" ? "is-active" : ""}`} onClick={() => setMode("draw")}>Tegn</button>
-                    <button className={`tool-btn ${mode === "edit" ? "is-active" : ""}`} onClick={() => setMode("edit")} disabled={!main.length}>Rediger</button>
-                    <button className={`tool-btn ${mode === "exclude" ? "is-active" : ""}`} onClick={() => setMode("exclude")} disabled={!mainClosed}>− Udeluk</button>
-                    <button className={`tool-btn ${mode === "wand" ? "is-active" : ""}`} onClick={() => setMode("wand")} disabled={wandLoading}>{wandLoading ? "AI…" : "✨ AI-spor"}</button>
-                    <button className="tool-btn" onClick={undo}>Fortryd</button>
-                    <button className="tool-btn" onClick={clear}>Ryd</button>
+                    <button className={`tool-btn ${mode === "draw" ? "is-active" : ""}`} onClick={() => setMode("draw")} title="Tegn (1)">Tegn</button>
+                    <button className={`tool-btn ${mode === "edit" ? "is-active" : ""}`} onClick={() => setMode("edit")} disabled={!main.length} title="Rediger (2)">Rediger</button>
+                    <button className={`tool-btn ${mode === "exclude" ? "is-active" : ""}`} onClick={() => setMode("exclude")} disabled={!mainClosed} title="Udeluk (3)">− Udeluk</button>
+                    <button className={`tool-btn ${mode === "wand" ? "is-active" : ""}`} onClick={() => { setMode("wand"); setWandOp("replace"); }} disabled={wandLoading} title="AI-magic-wand (4)">{wandLoading ? "AI…" : "✨ AI"}</button>
+                    {mode === "wand" && mainClosed && (
+                      <>
+                        <button className={`tool-btn ${wandOp === "add" ? "is-active" : ""}`} onClick={() => setWandOp("add")} disabled={wandLoading} title="AI tilføj område">+ AI</button>
+                        <button className={`tool-btn ${wandOp === "subtract" ? "is-active" : ""}`} onClick={() => setWandOp("subtract")} disabled={wandLoading} title="AI træk fra">− AI</button>
+                      </>
+                    )}
+                    <button className="tool-btn" onClick={undo} title="Fortryd (Cmd+Z)">↶</button>
+                    <button className="tool-btn" onClick={redo} title="Gentag (Cmd+Shift+Z)">↷</button>
+                    <button className={`tool-btn ${snapEnabled ? "is-active" : ""}`} onClick={() => setSnapEnabled(v => !v)} title="Snap (S)">Snap</button>
+                    <button className="tool-btn" onClick={clear} title="Ryd alt">Ryd</button>
                   </div>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
                   <button className="tool-btn" onClick={loadMatrikel}>Hent matrikel</button>
                   {matrikel && <button className="tool-btn" onClick={useMatrikelAsBase}>Brug matrikel som plæne</button>}
+                  <button className="tool-btn" onClick={() => {
+                    if (!navigator.geolocation) { toast("Geolocation ikke tilgængelig"); return; }
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const c: LngLat = [pos.coords.longitude, pos.coords.latitude];
+                        setChosen({ name: "Min position", center: c });
+                        clear(); setMatrikel(null);
+                        if (mapRef.current) mapRef.current.flyTo({ center: c, zoom: 19 });
+                        toast.success("Centreret på din position");
+                      },
+                      () => toast.error("Kunne ikke hente position"),
+                      { enableHighAccuracy: true, timeout: 8000 },
+                    );
+                  }}>📍 Find mig</button>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginTop: 24 }}>
