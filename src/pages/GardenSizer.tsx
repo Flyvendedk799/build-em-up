@@ -592,22 +592,64 @@ export default function GardenSizer() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (step !== 2) return;
-      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
-      if (e.key === "z" || e.key === "Z") { e.preventDefault(); undo(); }
-      else if (e.key === "Escape") {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && (e.key === "z" || e.key === "Z") && !e.shiftKey) { e.preventDefault(); undo(); return; }
+      if (meta && ((e.key === "z" || e.key === "Z") && e.shiftKey || e.key === "y" || e.key === "Y")) { e.preventDefault(); redo(); return; }
+      if (e.key === "z" || e.key === "Z") { e.preventDefault(); undo(); return; }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (mode === "exclude" && currentExclusion.length) { setCurrentExclusion(p => p.slice(0, -1)); e.preventDefault(); }
+        else if (mode === "draw" && main.length && !mainClosed) { setMain(p => p.slice(0, -1)); e.preventDefault(); }
+        return;
+      }
+      if (e.key === "Escape") {
         if (mode === "exclude" && currentExclusion.length) setCurrentExclusion([]);
         else if (!mainClosed) setMain([]);
-      }
-      else if (e.key === "Enter") {
+      } else if (e.key === "Enter") {
         if (mode === "draw" && main.length >= 3 && !mainClosed) setMainClosed(true);
         else if (mode === "exclude" && currentExclusion.length >= 3) {
           setExclusions(prev => [...prev, currentExclusion]); setCurrentExclusion([]);
         }
-      }
+      } else if (e.key === "1") setMode("draw");
+      else if (e.key === "2") setMode("edit");
+      else if (e.key === "3") setMode("exclude");
+      else if (e.key === "4") setMode("wand");
+      else if (e.key === "s" || e.key === "S") setSnapEnabled(v => !v);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, mode, main, mainClosed, currentExclusion]);
+  }, [step, mode, main, mainClosed, currentExclusion, exclusions]);
+
+  // ----- Autosave to localStorage -----
+  useEffect(() => {
+    if (step !== 2 || !chosen) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+          chosen, main, mainClosed, exclusions, imagery, savedAt: Date.now(),
+        }));
+      } catch {}
+    }, 800);
+    return () => clearTimeout(t);
+  }, [step, chosen, main, mainClosed, exclusions, imagery]);
+
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (!d?.chosen || Date.now() - (d.savedAt ?? 0) > 1000 * 60 * 60 * 24 * 3) return;
+      setChosen(d.chosen);
+      setMain(d.main ?? []); setMainClosed(!!d.mainClosed);
+      setExclusions(d.exclusions ?? []);
+      if (d.imagery) setImagery(d.imagery);
+      setStep(2);
+      toast("Gendannet kladde", { description: "Din tidligere måling er hentet frem" });
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ----- Save -----
   async function saveGarden() {
