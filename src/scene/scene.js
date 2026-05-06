@@ -972,7 +972,6 @@ export function initScene() {
     if (loaderHidden || !loader) return;
     loaderHidden = true;
     loader.classList.add('is-hidden');
-    setTimeout(() => loader && loader.parentNode && loader.parentNode.removeChild(loader), 900);
   }
 
   let last = performance.now();
