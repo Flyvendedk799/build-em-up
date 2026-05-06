@@ -19,13 +19,24 @@ function Logo() {
 
 function AccountButton({ dark = false }: { dark?: boolean }) {
   const { user, loading } = useAuth();
+  const [avatar, setAvatar] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) { setAvatar(null); return; }
+    supabase.from("profiles").select("avatar_url").eq("id", user.id).maybeSingle().then(({ data }) => {
+      setAvatar(data?.avatar_url ?? null);
+    });
+  }, [user?.id]);
   if (loading) return null;
   if (user) {
     const name = (user.user_metadata?.name as string | undefined) || user.email?.split("@")[0] || "Konto";
     const initial = name.charAt(0).toUpperCase();
     return (
       <Link to="/konto" className="nav-account" aria-label={`Min konto (${name})`}>
-        <span className="nav-avatar">{initial}</span>
+        {avatar ? (
+          <img src={avatar} alt="" className="nav-avatar" style={{ objectFit: "cover" }} />
+        ) : (
+          <span className="nav-avatar">{initial}</span>
+        )}
         <span className="nav-account-name">{name}</span>
       </Link>
     );
