@@ -38,6 +38,9 @@ const AdminPlantEditor = lazy(() => import("./pages/admin/AdminPlantEditor.tsx")
 const AdminOrders = lazy(() => import("./pages/admin/AdminOrders.tsx"));
 const AdminOrderDetail = lazy(() => import("./pages/admin/AdminOrderDetail.tsx"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers.tsx"));
+const AdminMedia = lazy(() => import("./pages/admin/AdminMedia.tsx"));
+const AdminContent = lazy(() => import("./pages/admin/AdminContent.tsx"));
+const AdminNotifications = lazy(() => import("./pages/admin/AdminNotifications.tsx"));
 const AdminStub = lazy(() => import("./pages/admin/AdminStub.tsx").then((m) => ({ default: m.AdminStub })));
 
 const queryClient = new QueryClient();
@@ -87,9 +90,9 @@ const App = () => (
                       <Route path="orders" element={<AdminOrders />} />
                       <Route path="orders/:id" element={<AdminOrderDetail />} />
                       <Route path="users" element={<AdminUsers />} />
-                      <Route path="media" element={<AdminStub title="Mediebibliotek" />} />
-                      <Route path="content" element={<AdminStub title="Indhold" />} />
-                      <Route path="notifications" element={<AdminStub title="Notifikationer" />} />
+                      <Route path="media" element={<AdminMedia />} />
+                      <Route path="content" element={<AdminContent />} />
+                      <Route path="notifications" element={<AdminNotifications />} />
                       <Route path="analytics" element={<AdminStub title="Analyse" />} />
                       <Route path="audit" element={<AdminStub title="Audit log" />} />
                     </Route>
