@@ -697,6 +697,7 @@ export default function GardenSizer() {
   // ----- Render -----
   return (
     <>
+      <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}`}</style>
       <AppNav active="sizer" />
       <div className="container">
         <header className="page-head">
