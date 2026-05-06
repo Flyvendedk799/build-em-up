@@ -74,7 +74,16 @@ export default function Webshop() {
         </div>
 
         {loading ? (
-          <p style={{ color: "var(--ink-500)", padding: "40px 0" }}>Henter sortiment…</p>
+          <div className="shop-grid" style={{ marginBottom: 80 }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="product product-skeleton" aria-hidden="true">
+                <div className="product-img skeleton-block" />
+                <div className="skeleton-line" style={{ width: "70%" }} />
+                <div className="skeleton-line" style={{ width: "40%", height: 10 }} />
+                <div className="skeleton-line" style={{ width: "30%", height: 14 }} />
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="shop-grid" style={{ marginBottom: 80 }}>
             {visible.map((p) => (
