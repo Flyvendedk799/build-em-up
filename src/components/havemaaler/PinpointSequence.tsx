@@ -213,6 +213,14 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
+    // Wait until the map is idle (all tiles loaded) OR a safety timeout fires
+    const waitIdle = (maxMs: number) => new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => { if (done) return; done = true; map.off("idle", finish); resolve(); };
+      map.once("idle", finish);
+      window.setTimeout(finish, maxMs);
+    });
+
     map.once("load", () => {
       // INTRO — fade map in, HUD slides in
       setStage("intro");
@@ -242,7 +250,10 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
             easing: easeInOutCubic,
           });
 
-          at(T.approachDur, () => {
+          at(T.approachDur, async () => {
+            // Hold briefly for ortofoto tiles to load before pitching steeply.
+            // Guarantees the descent never renders against blurry/missing tiles.
+            await waitIdle(600);
             // DESCENT — slow easeTo into the property
             setStage("descent");
             map.easeTo({
@@ -282,7 +293,7 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobile]);
+  }, [mobile, mapReady]);
 
   // Esc to skip
   useEffect(() => {
