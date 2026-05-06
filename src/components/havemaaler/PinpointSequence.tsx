@@ -53,9 +53,11 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
   const [calmDown, setCalmDown] = useState(false); // start hiding HUD/atmosphere before map fade
   const [fadingOut, setFadingOut] = useState(false);
   const [pinPx, setPinPx] = useState<{ x: number; y: number } | null>(null);
+  const [mapReady, setMapReady] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const timersRef = useRef<number[]>([]);
+  const rafRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
   const mobile = useIsMobile();
 
