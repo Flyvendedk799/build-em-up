@@ -73,7 +73,20 @@ const App = () => (
                     <Route path="/konto" element={<Account />} />
                     <Route path="/checkout" element={<Checkout />} />
                     <Route path="/order/:id" element={<OrderConfirmation />} />
-                    <Route path="/admin" element={<Admin />} />
+                    <Route path="/admin" element={<AdminLayout />}>
+                      <Route index element={<AdminDashboard />} />
+                      <Route path="products" element={<AdminProducts />} />
+                      <Route path="products/:id" element={<AdminProductEditor />} />
+                      <Route path="plants" element={<AdminStub title="Plante-katalog" />} />
+                      <Route path="orders" element={<AdminStub title="Ordrer" />} />
+                      <Route path="orders/:id" element={<AdminStub title="Ordre" />} />
+                      <Route path="users" element={<AdminStub title="Brugere" />} />
+                      <Route path="media" element={<AdminStub title="Mediebibliotek" />} />
+                      <Route path="content" element={<AdminStub title="Indhold" />} />
+                      <Route path="notifications" element={<AdminStub title="Notifikationer" />} />
+                      <Route path="analytics" element={<AdminStub title="Analyse" />} />
+                      <Route path="audit" element={<AdminStub title="Audit log" />} />
+                    </Route>
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </Suspense>
