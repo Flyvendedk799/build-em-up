@@ -422,9 +422,29 @@ export default function GardenSizer() {
       });
     }
     (map.getSource("matrikel") as mapboxgl.GeoJSONSource)?.setData(matrData);
+
+    // Snap indicator
+    const snapData: any = { type: "FeatureCollection", features: [] };
+    if (snapIndicator) snapData.features.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: snapIndicator } });
+    (map.getSource("snap") as mapboxgl.GeoJSONSource)?.setData(snapData);
+
+    // Wand area preview / analyzed bbox
+    const wandData: any = { type: "FeatureCollection", features: [] };
+    const previewBbox = mode === "wand" && wandHoverPos ? (() => {
+      const m = 45 / 111320; const lng = 45 / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
+      return [wandHoverPos[0] - lng, wandHoverPos[1] - m, wandHoverPos[0] + lng, wandHoverPos[1] + m] as [number, number, number, number];
+    })() : (mode === "wand" ? wandBbox : null);
+    if (previewBbox) {
+      const [w, s, e, n] = previewBbox;
+      wandData.features.push({
+        type: "Feature", properties: {},
+        geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
+      });
+    }
+    (map.getSource("wand-area") as mapboxgl.GeoJSONSource)?.setData(wandData);
   }
 
-  useEffect(() => { syncMap(); }, [main, mainClosed, exclusions, currentExclusion, hover, mode, matrikel]);
+  useEffect(() => { syncMap(); }, [main, mainClosed, exclusions, currentExclusion, hover, mode, matrikel, snapIndicator, wandHoverPos, wandBbox]);
 
   // ----- Area / perimeter (with exclusions subtracted) -----
   const { area, perim } = useMemo(() => {
