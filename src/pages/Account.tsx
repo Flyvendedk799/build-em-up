@@ -3,23 +3,27 @@ import { Link, useNavigate } from "react-router-dom";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useActiveGarden } from "@/lib/activeGarden";
 import { toast } from "sonner";
 
 type Profile = { name: string | null; address: string | null; postal_code: string | null };
-type Garden = { id: string; name: string; area_m2: number | null; address: string | null };
+type Garden = { id: string; name: string; area_m2: number | null; address: string | null; thumbnail_url: string | null };
 type Order = { id: string; created_at: string; total_dkk: number; status: string };
 type Device = { id: string; name: string; kind: string; status: string; battery: number | null };
 type WishProduct = { id: string; slug: string; name: string; base_price_dkk: number; gradient: string | null; svg_art: string | null };
+type ZoneCount = { garden_id: string; count: number };
 
 export default function Account() {
   const { user, loading, signOut } = useAuth();
   const nav = useNavigate();
+  const { activeGardenId, setActive } = useActiveGarden();
   const [profile, setProfile] = useState<Profile>({ name: "", address: "", postal_code: "" });
   const [gardens, setGardens] = useState<Garden[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [plantCount, setPlantCount] = useState(0);
   const [wishProducts, setWishProducts] = useState<WishProduct[]>([]);
+  const [zoneCounts, setZoneCounts] = useState<Record<string, number>>({});
   const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
@@ -31,17 +35,30 @@ export default function Account() {
     (async () => {
       const [{ data: p }, { data: g }, { data: o }, { data: d }, { count }, { data: w }] = await Promise.all([
         supabase.from("profiles").select("name, address, postal_code").eq("id", user.id).maybeSingle(),
-        supabase.from("gardens").select("id, name, area_m2, address").order("created_at", { ascending: false }),
+        supabase.from("gardens").select("id, name, area_m2, address, thumbnail_url").order("created_at", { ascending: false }),
         supabase.from("orders").select("id, created_at, total_dkk, status").order("created_at", { ascending: false }).limit(5),
         supabase.from("devices").select("id, name, kind, status, battery").order("created_at", { ascending: false }),
         supabase.from("user_plants").select("id", { count: "exact", head: true }),
         supabase.from("wishlists").select("product_id"),
       ]);
       if (p) setProfile({ name: p.name ?? "", address: p.address ?? "", postal_code: p.postal_code ?? "" });
-      setGardens(g ?? []);
+      const gardensList = g ?? [];
+      setGardens(gardensList);
       setOrders(o ?? []);
       setDevices(d ?? []);
       setPlantCount(count ?? 0);
+      // Auto-pick active garden if none chosen
+      if (gardensList.length && !activeGardenId) setActive(gardensList[0].id);
+      // Zone counts
+      if (gardensList.length) {
+        const { data: zs } = await supabase
+          .from("garden_zones")
+          .select("garden_id")
+          .in("garden_id", gardensList.map((x: any) => x.id));
+        const counts: Record<string, number> = {};
+        (zs ?? []).forEach((z: any) => { counts[z.garden_id] = (counts[z.garden_id] || 0) + 1; });
+        setZoneCounts(counts);
+      }
       const ids = (w ?? []).map((r: any) => r.product_id);
       if (ids.length) {
         const { data: prods } = await supabase
@@ -97,24 +114,49 @@ export default function Account() {
           <Stat label="Ordrer" value={String(orders.length)} link="/webshop" />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
-          {/* Gardens */}
-          <Card title="Mine haver" action={<Link to="/havemaaler" className="btn btn-ghost btn-sm">+ Ny opmåling</Link>}>
-            {gardens.length === 0 ? (
-              <Empty text="Ingen haver endnu — start med Havemåleren." cta={{ to: "/havemaaler", label: "Mål din have" }} />
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {gardens.map(g => (
-                  <Row key={g.id}
-                    title={g.name}
-                    sub={g.address ?? "—"}
-                    right={g.area_m2 ? `${fmt(Math.round(g.area_m2))} m²` : ""}
-                  />
-                ))}
-              </div>
-            )}
-          </Card>
+        {/* Min have hub — full width */}
+        <Card title="Min have" action={<Link to="/havemaaler" className="btn btn-ghost btn-sm">+ Ny opmåling</Link>}>
+          {gardens.length === 0 ? (
+            <Empty text="Ingen haver endnu — start med Havemåleren." cta={{ to: "/havemaaler", label: "Mål din have" }} />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
+              {gardens.map(g => {
+                const active = g.id === activeGardenId;
+                return (
+                  <div key={g.id} style={{
+                    border: active ? "2px solid var(--forest-800)" : "1px solid var(--ink-100)",
+                    borderRadius: 14, overflow: "hidden", background: "var(--paper)",
+                    display: "flex", flexDirection: "column",
+                  }}>
+                    <div style={{
+                      aspectRatio: "16/10",
+                      background: g.thumbnail_url ? `url(${g.thumbnail_url}) center/cover` : "linear-gradient(135deg, var(--forest-800), var(--ochre-600))",
+                    }} />
+                    <div style={{ padding: 14, flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ fontWeight: 600, fontSize: 15 }}>{g.name}</div>
+                      <div style={{ fontSize: 12, color: "var(--ink-500)" }}>{g.address ?? "—"}</div>
+                      <div style={{ display: "flex", gap: 10, fontSize: 12, color: "var(--ink-600)", marginTop: 4 }}>
+                        <span>{g.area_m2 ? `${fmt(Math.round(g.area_m2))} m²` : "—"}</span>
+                        <span>·</span>
+                        <span>{zoneCounts[g.id] || 0} zoner</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                        {active ? (
+                          <span className="btn btn-ghost btn-sm" style={{ pointerEvents: "none", color: "var(--forest-800)" }}>✓ Aktiv</span>
+                        ) : (
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setActive(g.id); toast.success(`${g.name} er nu aktiv`); }}>Brug denne</button>
+                        )}
+                        <Link to="/vanding" className="btn btn-ghost btn-sm">Vanding</Link>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
 
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start", marginTop: 24 }}>
           {/* Devices */}
           <Card title="Mine enheder" action={<Link to="/vanding" className="btn btn-ghost btn-sm">Konfigurer</Link>}>
             {devices.length === 0 ? (

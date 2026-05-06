@@ -514,6 +514,8 @@ export default function GardenSizer() {
       user_id: user.id, garden_id: g.id, name: "Græsplæne", type: "lawn",
       polygon: polyGeo, area_m2: Math.round(area),
     });
+    const { useActiveGarden } = await import("@/lib/activeGarden");
+    useActiveGarden.getState().setActive(g.id);
     toast.success("Have gemt"); navigate("/konto");
   }
 

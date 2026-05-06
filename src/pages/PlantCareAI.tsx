@@ -3,10 +3,11 @@ import ReactMarkdown from "react-markdown";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type Msg = { role: "user" | "assistant"; content: string | ContentPart[] };
 type Conv = { id: string; title: string; updated_at: string };
 
 const STARTERS = [
@@ -18,12 +19,25 @@ const STARTERS = [
 
 export default function PlantCareAI() {
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [conversations, setConversations] = useState<Conv[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) { toast.error("Billede er for stort (max 8 MB)."); return; }
+    const reader = new FileReader();
+    reader.onload = () => setPendingImage(reader.result as string);
+    reader.readAsDataURL(f);
+    e.target.value = "";
+  }
 
   useEffect(() => {
     if (user) loadConversations();
@@ -57,10 +71,20 @@ export default function PlantCareAI() {
   }
 
   async function send(text: string) {
-    if (!text.trim() || streaming || !user) return;
+    const trimmed = text.trim();
+    if ((!trimmed && !pendingImage) || streaming || !user) return;
     setInput("");
+    const imageDataUrl = pendingImage;
+    setPendingImage(null);
 
-    const userMsg: Msg = { role: "user", content: text.trim() };
+    const content: string | ContentPart[] = imageDataUrl
+      ? [
+          { type: "text", text: trimmed || "Hvad er der galt med denne plante?" },
+          { type: "image_url", image_url: { url: imageDataUrl } },
+        ]
+      : trimmed;
+
+    const userMsg: Msg = { role: "user", content };
     const history = [...messages, userMsg];
     setMessages(history);
     setStreaming(true);
@@ -69,7 +93,7 @@ export default function PlantCareAI() {
     try {
       // Create conversation if none
       if (!convId) {
-        const title = text.trim().slice(0, 60);
+        const title = (trimmed || "Billed-diagnose").slice(0, 60);
         const { data, error } = await supabase
           .from("chat_conversations")
           .insert({ user_id: user.id, title })
@@ -80,12 +104,15 @@ export default function PlantCareAI() {
         setActiveConv(convId);
       }
 
-      // Persist user message
+      // Persist user message (text-only summary; we don't store image in DB)
+      const persistedText = imageDataUrl
+        ? `[📷 Billede vedhæftet] ${trimmed}`.trim()
+        : trimmed;
       await supabase.from("chat_messages").insert({
         conversation_id: convId,
         user_id: user.id,
         role: "user",
-        content: userMsg.content,
+        content: persistedText,
       });
 
       // Call edge function with streaming
@@ -96,7 +123,7 @@ export default function PlantCareAI() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, hasImage: !!imageDataUrl }),
       });
 
       if (resp.status === 429) { toast.error("For mange beskeder — prøv igen om lidt."); setStreaming(false); return; }
@@ -281,39 +308,81 @@ export default function PlantCareAI() {
                   </div>
                 </div>
               ) : (
-                messages.map((m, i) => (
-                  <div key={i} style={{ marginBottom: 22, display: "flex", gap: 12 }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: 16, flexShrink: 0,
-                      background: m.role === "user" ? "var(--forest-800)" : "var(--ochre-600)",
-                      color: "white",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 13, fontWeight: 600,
-                    }}>
-                      {m.role === "user" ? "Du" : "🌿"}
-                    </div>
-                    <div style={{ flex: 1, paddingTop: 4 }}>
-                      <div className="prose-chat" style={{ fontSize: 15, lineHeight: 1.65, color: "var(--ink-900)" }}>
-                        {m.role === "assistant" ? (
-                          <ReactMarkdown>{m.content || "…"}</ReactMarkdown>
-                        ) : (
-                          <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+                messages.map((m, i) => {
+                  const text = typeof m.content === "string"
+                    ? m.content
+                    : (m.content.find((p) => p.type === "text") as any)?.text ?? "";
+                  const img = typeof m.content === "string"
+                    ? null
+                    : (m.content.find((p) => p.type === "image_url") as any)?.image_url?.url;
+                  const isLastAssistant = m.role === "assistant" && i === messages.length - 1 && !streaming && text;
+                  return (
+                    <div key={i} style={{ marginBottom: 22, display: "flex", gap: 12 }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 16, flexShrink: 0,
+                        background: m.role === "user" ? "var(--forest-800)" : "var(--ochre-600)",
+                        color: "white",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 13, fontWeight: 600,
+                      }}>
+                        {m.role === "user" ? "Du" : "🌿"}
+                      </div>
+                      <div style={{ flex: 1, paddingTop: 4 }}>
+                        {img && (
+                          <img src={img} alt="vedhæftet" style={{ maxWidth: 240, borderRadius: 10, marginBottom: 10, display: "block" }} />
+                        )}
+                        <div className="prose-chat" style={{ fontSize: 15, lineHeight: 1.65, color: "var(--ink-900)" }}>
+                          {m.role === "assistant" ? (
+                            <ReactMarkdown>{text || "…"}</ReactMarkdown>
+                          ) : (
+                            <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
+                          )}
+                        </div>
+                        {isLastAssistant && (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/vanding")}>💧 Lav vandingsplan</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/webshop")}>🛒 Find i shop</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/havemaaler")}>📐 Mål have</button>
+                          </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
+            {pendingImage && (
+              <div style={{ borderTop: "1px solid var(--ink-100)", padding: "10px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+                <img src={pendingImage} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8 }} />
+                <span style={{ fontSize: 13, color: "var(--ink-500)", flex: 1 }}>Billede klar — beskriv evt. symptomerne</span>
+                <button onClick={() => setPendingImage(null)} className="btn btn-ghost btn-sm">Fjern</button>
+              </div>
+            )}
+
             <form
               onSubmit={(e) => { e.preventDefault(); send(input); }}
-              style={{ borderTop: "1px solid var(--ink-100)", padding: 16, display: "flex", gap: 10 }}
+              style={{ borderTop: "1px solid var(--ink-100)", padding: 16, display: "flex", gap: 10, alignItems: "center" }}
             >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={onPickImage}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn btn-ghost"
+                disabled={streaming}
+                aria-label="Vedhæft billede"
+                style={{ padding: "10px 14px" }}
+              >📷</button>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Spørg om beskæring, sygdomme, gødning…"
+                placeholder={pendingImage ? "Beskriv hvad du ser…" : "Spørg om beskæring, sygdomme, gødning…"}
                 disabled={streaming}
                 style={{
                   flex: 1,
@@ -328,7 +397,7 @@ export default function PlantCareAI() {
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={streaming || !input.trim()}
+                disabled={streaming || (!input.trim() && !pendingImage)}
               >
                 {streaming ? "…" : "Send"}
               </button>

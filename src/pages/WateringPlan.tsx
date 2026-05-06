@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useActiveGarden } from "@/lib/activeGarden";
 import { toast } from "sonner";
 
 type Garden = { id: string; name: string; latitude: number | null; longitude: number | null };
@@ -55,7 +56,9 @@ function nextOccurrence(s: Schedule): Date {
 
 export default function WateringPlan() {
   const { user, loading: authLoading } = useAuth();
+  const { activeGardenId, setActive } = useActiveGarden();
   const [loading, setLoading] = useState(true);
+  const [allGardens, setAllGardens] = useState<Garden[]>([]);
   const [garden, setGarden] = useState<Garden | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -66,14 +69,16 @@ export default function WateringPlan() {
     if (!user) return;
     (async () => {
       setLoading(true);
-      const { data: g } = await supabase
+      const { data: gs } = await supabase
         .from("gardens")
         .select("id,name,latitude,longitude")
         .eq("user_id", user.id)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      setGarden(g ?? null);
+        .order("created_at", { ascending: true });
+      const list = (gs ?? []) as Garden[];
+      setAllGardens(list);
+      const g = list.find((x) => x.id === activeGardenId) ?? list[0] ?? null;
+      setGarden(g);
+      if (g && !activeGardenId) setActive(g.id);
 
       if (g) {
         const { data: zs } = await supabase
@@ -81,6 +86,8 @@ export default function WateringPlan() {
           .select("id,garden_id,name,type,area_m2")
           .eq("garden_id", g.id);
         setZones(zs ?? []);
+      } else {
+        setZones([]);
       }
 
       const { data: ss } = await supabase
@@ -99,7 +106,7 @@ export default function WateringPlan() {
 
       setLoading(false);
     })();
-  }, [user]);
+  }, [user, activeGardenId]);
 
   // Fetch weather forecast (Open-Meteo, no key needed)
   useEffect(() => {
@@ -210,6 +217,46 @@ export default function WateringPlan() {
             Lav timere for hvert bed. Hvis Open-Meteo melder regn over 3 mm på dagen, springer AI'en vandingen over.
           </p>
         </header>
+
+        {allGardens.length > 1 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20, alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "var(--ink-500)", marginRight: 4 }}>Aktiv have:</span>
+            {allGardens.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setActive(g.id)}
+                className={g.id === activeGardenId ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"}
+              >{g.name}</button>
+            ))}
+          </div>
+        )}
+
+        {garden && forecast.length > 0 && (
+          <div style={{ ...card(), padding: 16 }}>
+            <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--ink-500)", marginBottom: 10 }}>
+              7-dages vejr · {garden.name}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+              {forecast.slice(0, 7).map((f) => {
+                const d = new Date(f.date);
+                const wet = f.mm > 3;
+                return (
+                  <div key={f.date} style={{
+                    textAlign: "center",
+                    padding: "10px 4px",
+                    borderRadius: 10,
+                    background: wet ? "rgba(60,120,200,0.12)" : "var(--ink-50)",
+                    border: wet ? "1px solid rgba(60,120,200,0.3)" : "1px solid transparent",
+                  }}>
+                    <div style={{ fontSize: 11, color: "var(--ink-500)" }}>{d.toLocaleDateString("da-DK", { weekday: "short" })}</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 4, color: wet ? "#2d5a8a" : "var(--ink-900)" }}>{f.mm.toFixed(1)}</div>
+                    <div style={{ fontSize: 10, color: "var(--ink-500)" }}>mm</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {!garden && (
           <div style={card()}>
