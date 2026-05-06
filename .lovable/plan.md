@@ -1,100 +1,76 @@
+# Immersive Product Detail Page
 
-# Havelandet — Functionality & UX Upgrade Plan
+Turn `/webshop/:slug` from a standard two‑column layout into an editorial, scroll‑driven experience that feels closer to a luxury garden brand site than a typical webshop.
 
-A sequenced, ambitious roadmap. Each sequence is shippable on its own, so we can stop, review, and adjust between them. Nothing here changes the front-page 3D scene's identity — only adds polish around it.
+## Vision
 
----
+A cinematic PDP built in distinct "acts": a hero that breathes, a sticky media stage that reacts to scroll, a story section, a "see it in your garden" tool, social proof, and an intelligent cross‑sell. Same product data, dramatically more presence.
 
-## Sequence 1 — Foundations: navigation, search, global polish
-Goal: make the site feel like one product, not five pages.
+## Acts (top to bottom)
 
-1. **Unified site chrome**
-   - Merge `SiteNav` + `AppNav` into one `SiteChrome` that adapts (transparent on hero, solid elsewhere).
-   - Add a slim sticky sub-bar on inner pages with breadcrumb + page actions (e.g. cart, save).
-2. **Global command palette / search (⌘K)**
-   - Searches: products, tools, plants catalog, account pages, recent orders.
-   - Mobile: full-screen sheet triggered by the existing "Søg" button + a search icon in `MobileTabBar`.
-3. **Cart & auth state visible everywhere**
-   - Cart badge with count in both desktop nav and mobile tabbar.
-   - Auth-aware "Min konto" → shows avatar + name when logged in, "Log ind" when not.
-4. **Page transitions + skeletons**
-   - Replace "Henter sortiment…" text with proper skeleton cards.
-   - Add subtle fade/slide transitions between routes (respect `prefers-reduced-motion`).
-5. **SEO + meta**
-   - Per-page `<title>`, meta description, OG image, JSON-LD (Product, BreadcrumbList, Organization).
-   - Single H1 audit, alt text pass, canonical tags.
+1. **Hero stage**
+   - Full‑viewport split: left = oversized serif product name with animated entrance, category eyebrow, price, primary CTAs. Right = animated product canvas (the existing gradient + SVG art) with parallax, a subtle floating shadow, and a soft Ken‑Burns drift.
+   - Background uses a derived tint from the product gradient (extracted at runtime) bleeding into the page.
+   - Breadcrumb + wishlist + share float at top.
 
----
+2. **Sticky media stage / scrollytelling**
+   - As the user scrolls, the product visual stays pinned on one side while the other side advances through 3–4 "chapters": *Materials*, *Mål & dimensioner*, *Pleje*, *Bæredygtighed*. Each chapter swaps copy + a small inline diagram/SVG accent and nudges the hero art (rotation, zoom, color overlay) so it feels like the product is being inspected.
 
-## Sequence 2 — Webshop that converts
-Goal: turn the shop from a list into a real store.
+3. **Variant & configurator strip**
+   - Sticky horizontal bar (becomes sticky on scroll past hero) with: variant chips, qty stepper, live price, "Læg i kurv" + "Køb nu". Replaces the current mobile sticky CTA with a unified responsive component.
 
-1. **Filtering & sorting**
-   - Sidebar (desktop) / sheet (mobile) with: price range, in-stock, category, "passer til min have" (uses saved garden size).
-   - Sort: nyhed, pris ↑/↓, mest populære.
-2. **Product detail upgrades**
-   - Image gallery, variant picker, qty stepper, sticky "Læg i kurv" on mobile.
-   - "Passer til din have" badge when product matches user's measured area / climate.
-   - Related products + recently viewed (localStorage).
-3. **Cart & checkout flow**
-   - Slide-over mini-cart from any page.
-   - Real checkout: address (autofill from profile), shipping options, order summary, confirmation page.
-   - Order history under `/konto`.
-4. **Wishlist / favorites** (per-user table) usable from product cards.
-5. **Stock + price formatting** consistent (DKK, "Udsolgt" pill, "Få på lager" warning).
+4. **"Pas til min have" panel**
+   - Pulls the active garden from `activeGarden.ts`. Shows: "Passer i din have (X m²) — fylder ~Y%" with a tiny scaled silhouette overlay. If no garden yet, CTA → `/garden-sizer`.
+   - For plant products: pulls weather context from the existing watering plan to show "Vandes ~N gange/uge i din zone".
 
----
+5. **Specs grid**
+   - Editorial 3–4 column spec table (Materiale, Mål, Vægt, Oprindelse) styled as a magazine sidebar, not a boring `<table>`.
 
-## Sequence 3 — Tools that talk to each other
-Goal: Havemåler → Vanding → AI as one connected workflow, not three islands.
+6. **Story / long description**
+   - Full‑bleed band with the product gradient as background, large serif pull quote, and `description` typeset as a single editorial column with drop cap.
 
-1. **"Min have" hub on `/konto`**
-   - Cards for each garden: thumbnail, area, zones, devices, next watering.
-   - One-click "Brug denne have" sets active garden across all tools.
-2. **Havemåler improvements**
-   - Save multiple gardens, name + edit polygons, exclude obstacles (already in schema).
-   - Result page recommends robot + sprinklers from the shop directly.
-3. **Vandingsplan**
-   - Visual week calendar per zone, drag to edit.
-   - Weather-aware preview ("springes over onsdag pga. regn").
-   - Push/email reminders (Lovable Cloud edge function + cron).
-4. **Plantepleje AI**
-   - Conversation history sidebar (table already exists).
-   - Image upload for plant diagnosis (Lovable AI vision model).
-   - Quick-actions: "Tilføj til min have", "Lav vandingsplan", "Find i shop".
-5. **Cross-tool deep links**: AI answer → "Opret vandingsplan for dette bed" prefilled.
+7. **Reviews & trust**
+   - Star summary, 2–3 highlighted reviews, trust badges (fragtfri over X, 30 dages retur, dansk kundeservice). Pulls from a new `product_reviews` table if present, otherwise renders a graceful empty state with "Vær den første".
 
----
+8. **Cross‑sell: "Komplet din have"**
+   - Bundle row: current product + 2 complementary items (same category or curated). Single "Tilføj alle (–10%)" CTA that adds them all to cart with a bundle note.
 
-## Sequence 4 — Account, identity, retention
-1. **Auth polish**: Google sign-in, magic link option, password reset flow QA, session-persist tested.
-2. **Profile**: name, address (used for shipping + weather), avatar upload to existing `garden-thumbnails` bucket (or new `avatars`).
-3. **Notifications center**: vandingshændelser, ordrestatus, sæsonpåmindelser.
-4. **Onboarding** (first login): 3-step wizard — opmål have → vælg planter → første vandingsplan. Skippable.
-5. **Roles**: admin dashboard at `/admin` (gated by `has_role`) for products, orders, plants catalog CRUD.
+9. **Related + recently viewed**
+   - Keep current sections but restyle as horizontal snap‑scroll carousels with peek.
 
----
+## Interaction & motion
 
-## Sequence 5 — Performance, quality, trust
-1. **Code-split** every route + lazy-load the 3D scene (`React.lazy` + `Suspense`).
-2. **Image pipeline**: `<picture>` + AVIF/WebP, `loading="lazy"`, explicit dimensions to kill CLS.
-3. **Error boundaries** per route + a friendly 404/500.
-4. **Accessibility**: focus rings, skip-link, aria on tabbar, color-contrast audit on dark hero.
-5. **Analytics**: lightweight event tracking (page views, add-to-cart, tool completions).
-6. **Tests**: vitest for cart math, formatting, route guards; smoke test the AI edge function.
+- Framer‑motion for hero entrance, chapter transitions, and sticky stage parallax.
+- `IntersectionObserver` to drive chapter state (no heavy scroll libs).
+- Respect `prefers-reduced-motion` everywhere — fall back to instant transitions.
+- Cursor‑follow soft glow on the hero canvas (desktop only).
+- Image stage supports pinch/drag zoom on mobile via a lightweight gesture handler.
 
----
+## Technical notes
 
-## Technical notes (for the curious)
+- New components (frontend only):
+  - `src/pages/ProductDetail.tsx` — rewritten as a thin orchestrator.
+  - `src/components/pdp/HeroStage.tsx`
+  - `src/components/pdp/StickyMediaStage.tsx` (chapters + pinned visual)
+  - `src/components/pdp/StickyBuyBar.tsx` (replaces `.pdp-sticky`)
+  - `src/components/pdp/FitInGarden.tsx` (uses `activeGarden`)
+  - `src/components/pdp/SpecsGrid.tsx`
+  - `src/components/pdp/StoryBand.tsx`
+  - `src/components/pdp/ReviewsBlock.tsx`
+  - `src/components/pdp/BundleRow.tsx`
+  - `src/components/pdp/ProductCarousel.tsx` (snap‑scroll)
+- Styling: extend `src/styles/app.css` with a scoped `.pdp-*` block; use existing tokens (`--ink-*`, `--mist-*`, `--serif`, `--r-lg`). No new color tokens unless needed for tinted backgrounds (derived at runtime via CSS `color-mix`).
+- Data: reuse current `products` query. If reviews table doesn't exist, the block self‑hides. Bundle picks deterministically from `related` so no schema change required.
+- Analytics: emit `pdp_view`, `pdp_chapter_view`, `pdp_fit_check`, `bundle_add` via existing `track()`.
+- SEO: keep `usePageMeta` + add JSON‑LD `Product` schema (name, description, price, availability, image gradient as og fallback).
+- Accessibility: each chapter is a `<section>` with heading; sticky bar has `role="region" aria-label`; motion gated by reduced‑motion.
 
-- Frontend only where possible; backend additions limited to: `wishlists`, `notifications`, `addresses`, optional `recently_viewed`, plus an edge function for weather-aware schedule recompute and one for order confirmation emails.
-- All new tables get RLS mirroring the existing `own X` policy pattern.
-- AI features use Lovable AI Gateway (`google/gemini-2.5-flash` for chat, `google/gemini-2.5-pro` for vision diagnosis).
-- No changes to `scene.js` behavior beyond lazy-loading it.
+## Out of scope
 
----
+- No new database tables or migrations (reviews block degrades gracefully).
+- No backend / edge function changes.
+- No changes to cart, checkout, or webshop listing logic.
 
-## Suggested order of execution
-Ship Sequence 1 first (it unblocks everything else visually), then 2 (revenue), then 3 (the differentiator), then 4 + 5 in parallel.
+## Deliverable
 
-Tell me which sequence to start on — or pick specific items across sequences and I'll bundle them into the first build.
+A PDP that feels like a destination, not a form — ambitious motion, real garden context, and a buy bar that's always within reach.
