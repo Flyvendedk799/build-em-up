@@ -150,6 +150,7 @@ export default function GardenSizer() {
     map.on("mousedown", onMapMouseDown);
     map.on("mouseup", () => setDraggingVertex(null));
     map.on("dblclick", onMapDblClick);
+    map.on("contextmenu", onMapContextMenu);
 
     return () => {
       map.remove();
