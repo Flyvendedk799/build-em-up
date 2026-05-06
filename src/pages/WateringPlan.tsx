@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useActiveGarden } from "@/lib/activeGarden";
 import { toast } from "sonner";
 
 type Garden = { id: string; name: string; latitude: number | null; longitude: number | null };
