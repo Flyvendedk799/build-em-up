@@ -3,13 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useActiveGarden } from "@/lib/activeGarden";
 import { toast } from "sonner";
 
 type Profile = { name: string | null; address: string | null; postal_code: string | null };
-type Garden = { id: string; name: string; area_m2: number | null; address: string | null };
+type Garden = { id: string; name: string; area_m2: number | null; address: string | null; thumbnail_url: string | null };
 type Order = { id: string; created_at: string; total_dkk: number; status: string };
 type Device = { id: string; name: string; kind: string; status: string; battery: number | null };
 type WishProduct = { id: string; slug: string; name: string; base_price_dkk: number; gradient: string | null; svg_art: string | null };
+type ZoneCount = { garden_id: string; count: number };
 
 export default function Account() {
   const { user, loading, signOut } = useAuth();
