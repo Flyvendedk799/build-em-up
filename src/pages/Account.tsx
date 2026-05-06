@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useActiveGarden } from "@/lib/activeGarden";
 import { toast } from "sonner";
 
-type Profile = { name: string | null; address: string | null; postal_code: string | null };
+type Profile = { name: string | null; address: string | null; postal_code: string | null; avatar_url: string | null };
 type Garden = { id: string; name: string; area_m2: number | null; address: string | null; thumbnail_url: string | null };
 type Order = { id: string; created_at: string; total_dkk: number; status: string };
 type Device = { id: string; name: string; kind: string; status: string; battery: number | null };
@@ -17,7 +17,8 @@ export default function Account() {
   const { user, loading, signOut } = useAuth();
   const nav = useNavigate();
   const { activeGardenId, setActive } = useActiveGarden();
-  const [profile, setProfile] = useState<Profile>({ name: "", address: "", postal_code: "" });
+  const [profile, setProfile] = useState<Profile>({ name: "", address: "", postal_code: "", avatar_url: null });
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [gardens, setGardens] = useState<Garden[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
