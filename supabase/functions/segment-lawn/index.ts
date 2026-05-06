@@ -82,9 +82,15 @@ Deno.serve(async (req) => {
       });
     }
     const imgBuf = new Uint8Array(await imgRes.arrayBuffer());
+    console.log("ortofoto bytes:", imgBuf.length);
+    // chunked base64 to avoid stack overflow with large images
     let bin = "";
-    for (let i = 0; i < imgBuf.length; i++) bin += String.fromCharCode(imgBuf[i]);
+    const CHUNK = 0x8000;
+    for (let i = 0; i < imgBuf.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, Array.from(imgBuf.subarray(i, i + CHUNK)) as any);
+    }
     const b64 = btoa(bin);
+    console.log("b64 length:", b64.length);
 
     // Click as pixel coords
     const px = Math.round(((click[0] - minLng) / (maxLng - minLng)) * width);
