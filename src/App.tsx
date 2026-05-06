@@ -18,6 +18,8 @@ import PlantCareAI from "./pages/PlantCareAI.tsx";
 import Account from "./pages/Account.tsx";
 import { MobileTabBar } from "./components/layout/MobileTabBar.tsx";
 import { ScrollToTop } from "./components/layout/ScrollToTop.tsx";
+import { CommandPalette } from "./components/CommandPalette.tsx";
+import { RouteTransition } from "./components/layout/RouteTransition.tsx";
 
 const queryClient = new QueryClient();
 
@@ -29,21 +31,24 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <ScrollToTop />
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/webshop" element={<Webshop />} />
-            <Route path="/webshop/:slug" element={<ProductDetail />} />
-            <Route path="/cart" element={<CartPage />} />
-            <Route path="/login" element={<AuthPage initialMode="login" />} />
-            <Route path="/signup" element={<AuthPage initialMode="signup" />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/havemaaler" element={<GardenSizer />} />
-            <Route path="/vanding" element={<WateringPlan />} />
-            <Route path="/ai" element={<PlantCareAI />} />
-            <Route path="/konto" element={<Account />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <RouteTransition>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/webshop" element={<Webshop />} />
+              <Route path="/webshop/:slug" element={<ProductDetail />} />
+              <Route path="/cart" element={<CartPage />} />
+              <Route path="/login" element={<AuthPage initialMode="login" />} />
+              <Route path="/signup" element={<AuthPage initialMode="signup" />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/havemaaler" element={<GardenSizer />} />
+              <Route path="/vanding" element={<WateringPlan />} />
+              <Route path="/ai" element={<PlantCareAI />} />
+              <Route path="/konto" element={<Account />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </RouteTransition>
           <MobileTabBar />
+          <CommandPalette />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

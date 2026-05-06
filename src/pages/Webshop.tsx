@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useCart, formatDkk, CartItem } from "@/lib/cart";
+import { usePageMeta } from "@/hooks/usePageMeta";
 import { toast } from "sonner";
 import { ShoppingCart } from "lucide-react";
 
@@ -34,8 +35,12 @@ export default function Webshop() {
   const cat = params.get("cat") || "all";
   const cart = useCart();
 
+  usePageMeta({
+    title: "Webshop · Havelandet",
+    description: "Frø, planter, jord og smarte værktøjer fra danske leverandører — testet i dansk klima.",
+  });
+
   useEffect(() => {
-    document.title = "Webshop · Havelandet";
     supabase.from("products").select("*").order("featured", { ascending: false }).then(({ data }) => {
       setProducts((data as Product[]) || []);
       setLoading(false);
@@ -74,7 +79,16 @@ export default function Webshop() {
         </div>
 
         {loading ? (
-          <p style={{ color: "var(--ink-500)", padding: "40px 0" }}>Henter sortiment…</p>
+          <div className="shop-grid" style={{ marginBottom: 80 }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="product product-skeleton" aria-hidden="true">
+                <div className="product-img skeleton-block" />
+                <div className="skeleton-line" style={{ width: "70%" }} />
+                <div className="skeleton-line" style={{ width: "40%", height: 10 }} />
+                <div className="skeleton-line" style={{ width: "30%", height: 14 }} />
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="shop-grid" style={{ marginBottom: 80 }}>
             {visible.map((p) => (
