@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useCart, formatDkk } from "@/lib/cart";
+import { useCart, formatDkk, type CartItem } from "@/lib/cart";
 
-const item = (over: Partial<Parameters<typeof useCart.getState>["0"] extends never ? never : never> = {}) => ({
+const item = (over: Partial<CartItem> = {}): CartItem => ({
   productId: "p1",
   name: "Test",
   unitPriceDkk: 100,
