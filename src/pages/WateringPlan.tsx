@@ -56,7 +56,9 @@ function nextOccurrence(s: Schedule): Date {
 
 export default function WateringPlan() {
   const { user, loading: authLoading } = useAuth();
+  const { activeGardenId, setActive } = useActiveGarden();
   const [loading, setLoading] = useState(true);
+  const [allGardens, setAllGardens] = useState<Garden[]>([]);
   const [garden, setGarden] = useState<Garden | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -67,14 +69,16 @@ export default function WateringPlan() {
     if (!user) return;
     (async () => {
       setLoading(true);
-      const { data: g } = await supabase
+      const { data: gs } = await supabase
         .from("gardens")
         .select("id,name,latitude,longitude")
         .eq("user_id", user.id)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      setGarden(g ?? null);
+        .order("created_at", { ascending: true });
+      const list = (gs ?? []) as Garden[];
+      setAllGardens(list);
+      const g = list.find((x) => x.id === activeGardenId) ?? list[0] ?? null;
+      setGarden(g);
+      if (g && !activeGardenId) setActive(g.id);
 
       if (g) {
         const { data: zs } = await supabase
@@ -82,6 +86,8 @@ export default function WateringPlan() {
           .select("id,garden_id,name,type,area_m2")
           .eq("garden_id", g.id);
         setZones(zs ?? []);
+      } else {
+        setZones([]);
       }
 
       const { data: ss } = await supabase
@@ -100,7 +106,7 @@ export default function WateringPlan() {
 
       setLoading(false);
     })();
-  }, [user]);
+  }, [user, activeGardenId]);
 
   // Fetch weather forecast (Open-Meteo, no key needed)
   useEffect(() => {
