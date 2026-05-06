@@ -192,7 +192,7 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
     map.on("move", update);
     map.on("resize", update);
     return () => { map.off("move", update); map.off("resize", update); };
-  }, [center]);
+  }, [center, mapReady]);
 
   // Orchestrate stages
   useEffect(() => {
