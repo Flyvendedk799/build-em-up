@@ -271,7 +271,7 @@ export default function WateringPlan() {
         {garden && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
             className="water-card" style={{ marginBottom: 20 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="water-hero-grid">
               <div>
                 <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--ink-500)", marginBottom: 8 }}>
                   Denne uge · {garden.name}
@@ -297,7 +297,7 @@ export default function WateringPlan() {
                   )}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className="water-hero-actions">
                 <Button variant="outline" onClick={() => { setEditing(undefined); setBedOpen(true); }}>
                   <Plus size={16} className="mr-1.5" /> Tilføj bed
                 </Button>
