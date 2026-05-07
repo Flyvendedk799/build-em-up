@@ -310,8 +310,9 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
 
           at(T.approachDur, async () => {
             // Hold briefly for ortofoto tiles to load before pitching steeply.
-            // Guarantees the descent never renders against blurry/missing tiles.
             await waitIdle(600);
+            // Re-warm with the wider/flat-view grid right before descent
+            prewarmOrtoTiles(ortoWmsTemplate, center);
             // DESCENT — slow easeTo into the property
             setStage("descent");
             map.easeTo({
@@ -332,7 +333,10 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
               if ((navigator as any).vibrate) (navigator as any).vibrate(10);
             });
 
-            at(dropStart + T.dropDur + T.impactDur, () => {
+            at(dropStart + T.dropDur + T.impactDur, async () => {
+              // Wait for tiles needed by the about-to-be-flat footprint.
+              // Capped so we never stall the cinematic.
+              await waitIdle(400);
               setStage("settle");
               map.easeTo({
                 pitch: 0,
@@ -340,11 +344,10 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
                 duration: T.settleDur,
                 easing: easeInOutCubic,
               });
-            });
-
-            at(dropStart + T.dropDur + T.impactDur + T.settleDur, () => {
-              setStage("handoff");
-              finish();
+              at(T.settleDur, () => {
+                setStage("handoff");
+                finish();
+              });
             });
           });
         });
