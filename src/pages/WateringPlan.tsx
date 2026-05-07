@@ -353,6 +353,10 @@ export default function WateringPlan() {
                 </div>
               </div>
               <div className="water-hero-actions">
+                <PauseControl pauseUntil={pauseUntil} onPause={setPauseUntil} />
+                <Button variant="outline" onClick={exportICS} disabled={schedules.length === 0} title="Hent som .ics kalender">
+                  <Calendar size={16} className="mr-1.5" /> Kalender
+                </Button>
                 <Button variant="outline" onClick={() => { setEditing(undefined); setBedOpen(true); }}>
                   <Plus size={16} className="mr-1.5" /> Tilføj bed
                 </Button>
@@ -363,6 +367,16 @@ export default function WateringPlan() {
               </div>
             </div>
           </motion.div>
+        )}
+
+        {/* Smart rain alert */}
+        {garden && forecasts.length > 0 && (
+          <RainAlert
+            precip24h={precip24h}
+            savedL={summary.savedL}
+            dismissed={rainDismissedAt === new Date().toISOString().slice(0, 10)}
+            onDismiss={dismissRain}
+          />
         )}
 
         {/* 7-day weather strip */}
