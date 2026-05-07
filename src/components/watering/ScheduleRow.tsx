@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Trash2, Sparkles } from "lucide-react";
+import { Trash2, Sparkles, SkipForward, Copy } from "lucide-react";
 import DecisionPill from "./DecisionPill";
 import { Switch } from "@/components/ui/switch";
 import { Decision, Schedule, maskHas, maskToggle } from "@/lib/wateringAI";
@@ -12,9 +12,11 @@ type Props = {
   nextLabel?: string;
   onChange: (patch: Partial<Schedule>) => void;
   onDelete: () => void;
+  onSnoozeNext?: () => void;
+  onDuplicate?: () => void;
 };
 
-export default function ScheduleRow({ s, decision, nextLabel, onChange, onDelete }: Props) {
+export default function ScheduleRow({ s, decision, nextLabel, onChange, onDelete, onSnoozeNext, onDuplicate }: Props) {
   return (
     <motion.div layout
       initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -39,6 +41,12 @@ export default function ScheduleRow({ s, decision, nextLabel, onChange, onDelete
             padding: "2px 0", fontSize: 15, fontWeight: 500,
             color: "var(--ink-900)", outline: "none",
           }} />
+        {onDuplicate && (
+          <button onClick={onDuplicate} aria-label="Duplikér timer" title="Duplikér"
+            style={{ width: 32, height: 32, borderRadius: 10, border: "1px solid rgba(20,39,29,0.10)", background: "#fff", cursor: "pointer", color: "var(--ink-500)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <Copy size={14} />
+          </button>
+        )}
         <button onClick={onDelete} aria-label="Slet timer"
           style={{
             width: 32, height: 32, borderRadius: 10,
@@ -106,6 +114,14 @@ export default function ScheduleRow({ s, decision, nextLabel, onChange, onDelete
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingTop: 4, borderTop: "1px dashed rgba(20,39,29,0.08)" }}>
           {decision && <DecisionPill d={decision} />}
           {nextLabel && <span style={{ fontSize: 12, color: "var(--ink-500)" }}>{nextLabel}</span>}
+          {onSnoozeNext && decision?.action !== "skip" && (
+            <button onClick={onSnoozeNext}
+              style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink-500)", background: "transparent", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 6 }}
+              onMouseOver={(e) => { e.currentTarget.style.color = "var(--forest-800)"; }}
+              onMouseOut={(e) => { e.currentTarget.style.color = "var(--ink-500)"; }}>
+              <SkipForward size={12} /> Spring næste over
+            </button>
+          )}
         </div>
       )}
     </motion.div>
