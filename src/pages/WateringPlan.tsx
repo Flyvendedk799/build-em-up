@@ -166,12 +166,27 @@ export default function WateringPlan() {
     setAiLoading(true);
     setAiPlan(null);
     try {
+      // Pull plants per zone for richer AI context
+      const { data: plants } = await supabase
+        .from("user_plants")
+        .select("zone_id, custom_name, plant_slug, plants_catalog(name_da, water_need)")
+        .eq("garden_id", garden.id);
+      const plantsByZone: Record<string, { name: string; water_need?: string | null }[]> = {};
+      (plants ?? []).forEach((p: any) => {
+        if (!p.zone_id) return;
+        (plantsByZone[p.zone_id] ||= []).push({
+          name: p.custom_name || p.plants_catalog?.name_da || p.plant_slug || "plante",
+          water_need: p.plants_catalog?.water_need ?? null,
+        });
+      });
+
       const { data, error } = await supabase.functions.invoke("generate-watering-plan", {
         body: {
           lat: garden.latitude, lng: garden.longitude,
           zones: zones.map(z => ({
             id: z.id, name: z.name, type: z.type, area_m2: z.area_m2,
             sun_exposure: z.sun_exposure, soil: z.soil,
+            plants: plantsByZone[z.id] ?? [],
           })),
         },
       });
