@@ -9,3 +9,6 @@ verify_jwt = false
 [functions.segment-lawn]
 verify_jwt = false
 
+[functions.generate-watering-plan]
+verify_jwt = false
+
