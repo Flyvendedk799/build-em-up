@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, Plus, Pencil, Trash2, Droplets } from "lucide-react";
+import { Sparkles, Plus, Pencil, Trash2, Droplets, CalendarDown, Calendar } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -10,13 +10,16 @@ import { toast } from "sonner";
 import {
   Forecast, Schedule, Zone,
   decide, fetchForecast, litersForSession,
-  upcomingOccurrences, weekSummary,
+  upcomingOccurrences, weekSummary, moistureDeficit, precipNextHours, buildICS,
 } from "@/lib/wateringAI";
 import AddBedDialog, { BedDraft } from "@/components/watering/AddBedDialog";
 import WeekStrip from "@/components/watering/WeekStrip";
 import CountUp from "@/components/watering/CountUp";
 import AiPlanPreview, { AiPlan } from "@/components/watering/AiPlanPreview";
 import ScheduleRow from "@/components/watering/ScheduleRow";
+import MoistureGauge from "@/components/watering/MoistureGauge";
+import PauseControl from "@/components/watering/PauseControl";
+import RainAlert from "@/components/watering/RainAlert";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
