@@ -57,6 +57,39 @@ export default function WateringPlan() {
   const [aiPlan, setAiPlan] = useState<AiPlan | null>(null);
   const [newZoneId, setNewZoneId] = useState<string | null>(null);
 
+  // pause + snooze + alert state (persisted to localStorage)
+  const [pauseUntil, setPauseUntilState] = useState<Date | null>(() => {
+    const v = localStorage.getItem("watering.pauseUntil");
+    return v ? new Date(v) : null;
+  });
+  const [snoozedKeys, setSnoozedKeys] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("watering.snoozed");
+      return new Set<string>(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  });
+  const [rainDismissedAt, setRainDismissedAt] = useState<string | null>(() => localStorage.getItem("watering.rainDismissed"));
+
+  function setPauseUntil(iso: string | null) {
+    if (iso) { localStorage.setItem("watering.pauseUntil", iso); setPauseUntilState(new Date(iso)); toast.success("Vanding pauseret"); }
+    else { localStorage.removeItem("watering.pauseUntil"); setPauseUntilState(null); toast.success("Vanding genoptaget"); }
+  }
+  function snoozeNext(scheduleId: string) {
+    const sch = schedules.find(s => s.id === scheduleId);
+    const next = sch ? upcomingOccurrences(sch, 7)[0] : null;
+    if (!next) return;
+    const key = `${scheduleId}:${next.toISOString().slice(0, 10)}`;
+    const ns = new Set(snoozedKeys); ns.add(key);
+    setSnoozedKeys(ns);
+    localStorage.setItem("watering.snoozed", JSON.stringify([...ns]));
+    toast.success(`Springer over · ${next.toLocaleDateString("da-DK", { weekday: "short", day: "numeric", month: "short" })}`);
+  }
+  function dismissRain() {
+    const today = new Date().toISOString().slice(0, 10);
+    setRainDismissedAt(today);
+    localStorage.setItem("watering.rainDismissed", today);
+  }
+
   // ----- Load -----
   useEffect(() => {
     if (!user) return;
