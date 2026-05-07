@@ -43,7 +43,7 @@ function makeTimings(mobile: boolean) {
     dropOffset:   r(-200), // start 200ms before descent ends
     dropDur:      r(750),
     impactDur:    r(320),
-    settleDur:    r(700),
+    settleDur:    r(900),
     handoffDur:   r(650),
   };
 }
@@ -59,21 +59,42 @@ function lngLatToTile(lng: number, lat: number, z: number) {
   return { x, y };
 }
 
-// Pre-fetch a 3x3 grid of ortofoto tiles at z17 + z18 around the destination
-// so they're warm in the HTTP cache before the cinematic descent reaches them.
+// EPSG:3857 bbox of a single XYZ tile.
+const MERC_R = 20037508.342789244;
+function tileBboxEpsg3857(x: number, y: number, z: number) {
+  const size = (2 * MERC_R) / Math.pow(2, z);
+  const minX = -MERC_R + x * size;
+  const maxX = -MERC_R + (x + 1) * size;
+  const maxY = MERC_R - y * size;
+  const minY = MERC_R - (y + 1) * size;
+  return `${minX},${minY},${maxX},${maxY}`;
+}
+
+// Pre-fetch ortofoto tiles around the destination so they're warm in the
+// HTTP cache before the cinematic descent + final flat view need them.
+// Supports both XYZ ({z}/{x}/{y}) and WMS ({bbox-epsg-3857}) templates.
 function prewarmOrtoTiles(template: string | null, center: [number, number]) {
   if (!template) return;
   const [lng, lat] = center;
-  for (const z of [17, 18]) {
-    const { x, y } = lngLatToTile(lng, lat, z);
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        const url = template
+  // 5x5 at z18 (covers wide flat-view footprint), 3x3 at z19 (sharpest center)
+  const grids: Array<{ z: number; r: number }> = [
+    { z: 18, r: 2 },
+    { z: 19, r: 1 },
+  ];
+  for (const { z, r } of grids) {
+    const { x: cx, y: cy } = lngLatToTile(lng, lat, z);
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        const tx = cx + dx;
+        const ty = cy + dy;
+        let url = template
           .replace("{z}", String(z))
-          .replace("{x}", String(x + dx))
-          .replace("{y}", String(y + dy));
-        // bbox-templated WMS URLs won't match — best-effort only
-        if (url.includes("{")) continue;
+          .replace("{x}", String(tx))
+          .replace("{y}", String(ty));
+        if (url.includes("{bbox-epsg-3857}")) {
+          url = url.replace("{bbox-epsg-3857}", tileBboxEpsg3857(tx, ty, z));
+        }
+        if (url.includes("{")) continue; // unknown template token
         const img = new Image();
         img.decoding = "async";
         img.src = url;
@@ -289,8 +310,9 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
 
           at(T.approachDur, async () => {
             // Hold briefly for ortofoto tiles to load before pitching steeply.
-            // Guarantees the descent never renders against blurry/missing tiles.
             await waitIdle(600);
+            // Re-warm with the wider/flat-view grid right before descent
+            prewarmOrtoTiles(ortoWmsTemplate, center);
             // DESCENT — slow easeTo into the property
             setStage("descent");
             map.easeTo({
@@ -311,7 +333,10 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
               if ((navigator as any).vibrate) (navigator as any).vibrate(10);
             });
 
-            at(dropStart + T.dropDur + T.impactDur, () => {
+            at(dropStart + T.dropDur + T.impactDur, async () => {
+              // Wait for tiles needed by the about-to-be-flat footprint.
+              // Capped so we never stall the cinematic.
+              await waitIdle(400);
               setStage("settle");
               map.easeTo({
                 pitch: 0,
@@ -319,11 +344,10 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
                 duration: T.settleDur,
                 easing: easeInOutCubic,
               });
-            });
-
-            at(dropStart + T.dropDur + T.impactDur + T.settleDur, () => {
-              setStage("handoff");
-              finish();
+              at(T.settleDur, () => {
+                setStage("handoff");
+                finish();
+              });
             });
           });
         });

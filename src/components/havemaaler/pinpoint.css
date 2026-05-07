@@ -14,7 +14,7 @@
   position: absolute;
   inset: 0;
   opacity: 0;
-  transition: opacity 700ms cubic-bezier(.22,.61,.36,1);
+  transition: opacity 700ms cubic-bezier(.22,.61,.36,1), filter 250ms cubic-bezier(.22,.61,.36,1);
 }
 .pp-stage[data-stage="globe"] .pp-map,
 .pp-stage[data-stage="approach"] .pp-map,
@@ -23,6 +23,14 @@
 .pp-stage[data-stage="impact"] .pp-map,
 .pp-stage[data-stage="settle"] .pp-map,
 .pp-stage[data-stage="handoff"] .pp-map { opacity: 1; }
+
+/* Tiny motion-blur mask on the final flatten so any last tile swap is hidden */
+.pp-stage[data-stage="settle"] .pp-map { filter: blur(1.2px); }
+.pp-stage[data-stage="handoff"] .pp-map { filter: blur(0); }
+@media (prefers-reduced-motion: reduce) {
+  .pp-stage[data-stage="settle"] .pp-map,
+  .pp-stage[data-stage="handoff"] .pp-map { filter: none; }
+}
 
 /* Vignette */
 .pp-vignette {

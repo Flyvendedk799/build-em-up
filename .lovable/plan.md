@@ -1,58 +1,36 @@
-## Two polish fixes for `PinpointSequence`
+## Fix: brief blur when camera flattens to top-down
 
-Both issues are in `src/components/havemaaler/PinpointSequence.tsx` (+ tiny CSS tweak). No changes to game logic, routing, or `GardenSizer` business code.
+The remaining pop happens at the end — when `settle` eases pitch from 58° back to 0°. Flattening exposes a wider on-screen footprint of tiles than the pitched view, so Mapbox suddenly needs **more z18/z19 tiles** that weren't in the previous frustum. Until they decode, the flat view looks soft for ~150–400ms.
 
----
+### What's still missing
 
-### 1. Kill the ~0.7s freeze right after clicking the address
+1. We pre-warm a 3×3 grid at z17 + z18, but only z18 is centered on the destination — at the final flat view the camera covers a wider footprint, so edge tiles aren't warm.
+2. The pre-warm uses the `{z}/{x}/{y}` template substitution, but the ortofoto template is **WMS bbox-based** (`{bbox-epsg-3857}`), so the pre-warm currently `continue`s and does nothing for ortofoto. The function is a no-op for the actual project.
+3. There's no `idle` gate before `settle` — we wait before descending, but not before flattening, which is the frame the user notices.
 
-**What's happening:** The instant `setPinpointing(...)` fires in `GardenSizer.chooseAddress`, React mounts `PinpointSequence`, which synchronously:
-- builds a Mapbox style object,
-- calls `new mapboxgl.Map(...)` (heavy: WebGL context creation, shader compile, worker spin-up),
-- waits for the first tile batch before the map's CSS opacity transitions from 0 → 1.
+### Plan
 
-During that work the main thread is busy, so the overlay itself appears late and the click feels frozen.
+**1. Make the pre-warm actually run for the WMS source.**
+Compute the EPSG:3857 bbox for each tile around the destination and substitute `{bbox-epsg-3857}` properly. Pre-warm a **5×5** grid at z18 and a **3×3** at z19 — covering the wider footprint of the final flat view, not just the pitched descent.
 
-**Fix — instant overlay, deferred map boot:**
+**2. Add an `idle` gate before the flatten.**
+Right when `settle` is about to run, `await waitIdle(400)` (same helper we already added). Map flattens only after current tiles are decoded. 400ms cap so we never stall the cinematic.
 
-1. Render the overlay chrome (`pp-stage`, aurora, vignette, HUD steps, address card, "Spring over") on the very first frame with map container empty. CSS fade of the dark backdrop + HUD slides in immediately so the click feels acknowledged within ~16ms.
-2. Defer the Mapbox `new Map(...)` call to the next frame using `requestAnimationFrame` (double-RAF) inside the mount effect. The browser paints the overlay before the heavy WebGL init runs.
-3. Add a new `booting` substate of `intro`. While booting, show a subtle "Finder adresse…" shimmer on the first HUD step (already designed) and a soft loader pulse over `pp-map` so the dark area doesn't look dead.
-4. Pre-warm the Mapbox token + satellite low-zoom tiles in `GardenSizer` the moment the user **opens** the suggestion dropdown (cheap `<link rel="preconnect">` to `api.mapbox.com` and `api.dataforsyningen.dk`, plus a single Image() fetch of a low-z satellite tile). This shaves the TLS handshake off the critical path.
-5. Trim `fadeDuration` on the map constructor from 600 → 300 so the first tile paint is snappier (we already cross-fade visually via CSS).
+**3. Slightly lengthen the settle ease.**
+Bump `settleDur` from 700ms → 900ms so any final tile swap blends in during motion (motion blur masks small sharpness changes far better than a static frame does).
 
-Net result: the overlay is visible within one frame; the WebGL boot happens "behind" the already-visible UI, so the perceived freeze disappears.
+**4. Pre-warm continues during `descent`, not just `intro`.**
+Re-issue the prewarm at the start of `descent` (cheap; browser dedupes via HTTP cache) so tiles for the *flat* footprint specifically are requested before the pitch-out begins.
 
----
+**5. Tiny CSS safety net.**
+Add a 250ms `filter: blur(0)` → from a barely-visible `blur(1.5px)` on `.pp-map` only during the `settle` → `handoff` transition. Acts as imperceptible motion-blur masking the very last tile swap. Disabled under `prefers-reduced-motion`.
 
-### 2. Keep imagery sharp through every camera angle
+### Files
 
-**What's happening:** During the `descent` leg (zoom 15 → 18.7, pitch 0 → 58), there's a window roughly between zoom 15.5 and 17 where:
-- `mapbox.satellite` is fading out (current interp `14→17`) and gets overzoomed/stretched at the steep pitch,
-- the Danish ortofoto hasn't loaded its higher-zoom tiles yet,
-- so the viewer sees a blurry frame for ~0.3–0.6s.
+- `src/components/havemaaler/PinpointSequence.tsx` — fix `prewarmOrtoTiles` (real WMS bbox), pre-warm wider grid, re-issue at descent, idle-gate before settle, bump `settleDur`.
+- `src/components/havemaaler/pinpoint.css` — micro blur-clear transition on `.pp-map` during settle→handoff.
 
-**Fix — extend sharp coverage and pre-load orto tiles:**
+### Risks
 
-1. **Shift the cross-fade window earlier and tighter** in `buildStyle()`:
-   - satellite `raster-opacity`: `13 → 1`, `15.5 → 0` (was 14→17)
-   - orto `raster-opacity`: `13 → 0`, `15.5 → 1` (was 14→17)
-   This means the high-res Danish ortofoto is fully driving the view from zoom 15.5 onward — exactly when the camera starts pitching.
-2. **Bump satellite source `maxzoom` honesty:** keep `maxzoom: 19` (not 22) so Mapbox stops requesting overzoomed stretches; the orto layer takes over before that point anyway.
-3. **Pre-warm orto tiles for the destination** before the descent begins. As soon as `approach` starts, fetch a 3×3 grid of orto tiles around `center` at zoom 17 and 18 via hidden `Image()` requests (using the same WMS template). They land in HTTP cache so when Mapbox requests them during descent they paint instantly.
-4. **Hold for tiles before pitching:** add a `map.once('idle', …)` (with a 600ms safety timeout) at the *start* of the descent leg. Only after idle (or timeout) do we kick off the pitched `easeTo`. Guarantees we never pitch into half-loaded tiles.
-5. **Subtle blur-mask during the worst frame:** keep `pp-vignette` opacity slightly higher during `descent` (already there) and add a very light `backdrop-filter: blur(0.5px)` on the vignette edges only — masks any residual softness without affecting the centre where the pin lands.
-
----
-
-### Files touched
-
-- `src/components/havemaaler/PinpointSequence.tsx` — deferred map boot, descent `idle` gate, orto prewarm, cross-fade ranges, `maxzoom`, `fadeDuration`.
-- `src/components/havemaaler/pinpoint.css` — booting shimmer state for the first HUD step + tiny vignette tweak.
-- `src/pages/GardenSizer.tsx` — add `<link rel="preconnect">` warm-up when the address suggestion list opens (~5 lines, presentation-only).
-
-### Risks / fallbacks
-
-- `idle` event may not fire on flaky networks → the 600ms timeout guarantees the sequence always continues.
-- Pre-warm fetches are best-effort (no error handling needed; they just populate cache).
-- All timings stay within the existing `makeTimings` table so the overall ~5.5s rhythm is unchanged.
+- WMS bbox math: standard Web Mercator tile→bbox conversion is well-known; we'll match the same projection the source uses.
+- Extra ~25 image requests during intro/descent — all cached, all cancelable, tiny payload.
