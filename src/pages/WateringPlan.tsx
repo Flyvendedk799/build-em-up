@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, Plus, Pencil, Trash2, Droplets } from "lucide-react";
+import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -10,13 +10,16 @@ import { toast } from "sonner";
 import {
   Forecast, Schedule, Zone,
   decide, fetchForecast, litersForSession,
-  upcomingOccurrences, weekSummary,
+  upcomingOccurrences, weekSummary, moistureDeficit, precipNextHours, buildICS,
 } from "@/lib/wateringAI";
 import AddBedDialog, { BedDraft } from "@/components/watering/AddBedDialog";
 import WeekStrip from "@/components/watering/WeekStrip";
 import CountUp from "@/components/watering/CountUp";
 import AiPlanPreview, { AiPlan } from "@/components/watering/AiPlanPreview";
 import ScheduleRow from "@/components/watering/ScheduleRow";
+import MoistureGauge from "@/components/watering/MoistureGauge";
+import PauseControl from "@/components/watering/PauseControl";
+import RainAlert from "@/components/watering/RainAlert";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -54,6 +57,39 @@ export default function WateringPlan() {
   const [aiPlan, setAiPlan] = useState<AiPlan | null>(null);
   const [newZoneId, setNewZoneId] = useState<string | null>(null);
 
+  // pause + snooze + alert state (persisted to localStorage)
+  const [pauseUntil, setPauseUntilState] = useState<Date | null>(() => {
+    const v = localStorage.getItem("watering.pauseUntil");
+    return v ? new Date(v) : null;
+  });
+  const [snoozedKeys, setSnoozedKeys] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("watering.snoozed");
+      return new Set<string>(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  });
+  const [rainDismissedAt, setRainDismissedAt] = useState<string | null>(() => localStorage.getItem("watering.rainDismissed"));
+
+  function setPauseUntil(iso: string | null) {
+    if (iso) { localStorage.setItem("watering.pauseUntil", iso); setPauseUntilState(new Date(iso)); toast.success("Vanding pauseret"); }
+    else { localStorage.removeItem("watering.pauseUntil"); setPauseUntilState(null); toast.success("Vanding genoptaget"); }
+  }
+  function snoozeNext(scheduleId: string) {
+    const sch = schedules.find(s => s.id === scheduleId);
+    const next = sch ? upcomingOccurrences(sch, 7)[0] : null;
+    if (!next) return;
+    const key = `${scheduleId}:${next.toISOString().slice(0, 10)}`;
+    const ns = new Set(snoozedKeys); ns.add(key);
+    setSnoozedKeys(ns);
+    localStorage.setItem("watering.snoozed", JSON.stringify([...ns]));
+    toast.success(`Springer over · ${next.toLocaleDateString("da-DK", { weekday: "short", day: "numeric", month: "short" })}`);
+  }
+  function dismissRain() {
+    const today = new Date().toISOString().slice(0, 10);
+    setRainDismissedAt(today);
+    localStorage.setItem("watering.rainDismissed", today);
+  }
+
   // ----- Load -----
   useEffect(() => {
     if (!user) return;
@@ -90,7 +126,26 @@ export default function WateringPlan() {
     fetchForecast(garden.latitude, garden.longitude).then(setForecasts).catch(() => setForecasts([]));
   }, [garden?.latitude, garden?.longitude]);
 
-  const summary = useMemo(() => weekSummary(schedules, zones, forecasts), [schedules, zones, forecasts]);
+  const decideOpts = useMemo(() => ({ pauseUntil, snoozedKeys }), [pauseUntil, snoozedKeys]);
+  const summary = useMemo(() => weekSummary(schedules, zones, forecasts, decideOpts), [schedules, zones, forecasts, decideOpts]);
+  const precip24h = useMemo(() => precipNextHours(forecasts, 24), [forecasts]);
+
+  function exportICS() {
+    const ics = buildICS(schedules, zones, forecasts, decideOpts);
+    const blob = new Blob([ics], { type: "text/calendar" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "vandingsplan.ics"; a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Kalender hentet");
+  }
+
+  async function duplicateSchedule(s: Schedule) {
+    if (!user) return;
+    const { id, ...rest } = s;
+    const { data, error } = await supabase.from("watering_schedules").insert({ ...rest, user_id: user.id, name: `${s.name} (kopi)` }).select().single();
+    if (error || !data) { toast.error(error?.message ?? "Fejl"); return; }
+    setSchedules(prev => [...prev, data as Schedule]);
+  }
 
   // ----- Bed CRUD -----
   async function saveBed(b: BedDraft): Promise<void> {
@@ -298,6 +353,10 @@ export default function WateringPlan() {
                 </div>
               </div>
               <div className="water-hero-actions">
+                <PauseControl pauseUntil={pauseUntil} onPause={setPauseUntil} />
+                <Button variant="outline" onClick={exportICS} disabled={schedules.length === 0} title="Hent som .ics kalender">
+                  <Calendar size={16} className="mr-1.5" /> Kalender
+                </Button>
                 <Button variant="outline" onClick={() => { setEditing(undefined); setBedOpen(true); }}>
                   <Plus size={16} className="mr-1.5" /> Tilføj bed
                 </Button>
@@ -308,6 +367,16 @@ export default function WateringPlan() {
               </div>
             </div>
           </motion.div>
+        )}
+
+        {/* Smart rain alert */}
+        {garden && forecasts.length > 0 && (
+          <RainAlert
+            precip24h={precip24h}
+            savedL={summary.savedL}
+            dismissed={rainDismissedAt === new Date().toISOString().slice(0, 10)}
+            onDismiss={dismissRain}
+          />
         )}
 
         {/* 7-day weather strip */}
@@ -387,6 +456,12 @@ export default function WateringPlan() {
                       </div>
                     </div>
 
+                    {forecasts.length > 0 && (
+                      <div style={{ marginBottom: 14 }}>
+                        <MoistureGauge deficit={moistureDeficit(z, forecasts)} />
+                      </div>
+                    )}
+
                     {zSchedules.length > 0 && forecasts.length > 0 && (
                       <div style={{ marginBottom: 14 }}>
                         <WeekStrip schedules={zSchedules} zone={z} forecasts={forecasts} />
@@ -402,12 +477,14 @@ export default function WateringPlan() {
                     <div style={{ display: "grid", gap: 10 }}>
                       {zSchedules.map((s) => {
                         const next = upcomingOccurrences(s, 7)[0];
-                        const dec = next ? decide(s, z, next, forecasts, last48) : null;
+                        const dec = next ? decide(s, z, next, forecasts, last48, decideOpts) : null;
                         const nextLabel = next ? `${formatDate(next)} kl. ${s.start_time.slice(0, 5)}` : undefined;
                         return (
                           <ScheduleRow key={s.id} s={s} decision={dec} nextLabel={nextLabel}
                             onChange={(patch) => updateSchedule(s.id, patch)}
-                            onDelete={() => deleteSchedule(s.id)} />
+                            onDelete={() => deleteSchedule(s.id)}
+                            onSnoozeNext={() => snoozeNext(s.id)}
+                            onDuplicate={() => duplicateSchedule(s)} />
                         );
                       })}
                     </div>

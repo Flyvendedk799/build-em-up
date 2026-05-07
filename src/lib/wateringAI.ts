@@ -94,6 +94,11 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+export type DecideOpts = {
+  pauseUntil?: Date | null;
+  snoozedKeys?: Set<string>; // `${schedule_id}:${YYYY-MM-DD}`
+};
+
 /** Decide what should happen for a planned occurrence. */
 export function decide(
   s: Schedule,
@@ -101,12 +106,20 @@ export function decide(
   occ: Date,
   forecasts: Forecast[],
   recentMm48h: number,
+  opts: DecideOpts = {},
 ): Decision {
   const key = isoDate(occ);
   const fc = forecasts.find((f) => f.date === key);
   const precip = fc?.precip_mm ?? 0;
   const temp = fc?.temp_max ?? 18;
   const et0 = fc?.et0 ?? 3;
+
+  if (opts.pauseUntil && occ.getTime() < opts.pauseUntil.getTime()) {
+    return { action: "skip", reason: `Pauseret til ${opts.pauseUntil.toLocaleDateString("da-DK", { day: "numeric", month: "short" })}`, effectiveMin: 0, mmExpected: precip, confidence: "high" };
+  }
+  if (opts.snoozedKeys?.has(`${s.id}:${key}`)) {
+    return { action: "skip", reason: "Sprunget over manuelt", effectiveMin: 0, mmExpected: precip, confidence: "high" };
+  }
 
   if (!s.enabled) {
     return { action: "skip", reason: "Pause", effectiveMin: 0, mmExpected: precip, confidence: "high" };
@@ -149,6 +162,7 @@ export function weekSummary(
   schedules: Schedule[],
   zones: Zone[],
   forecasts: Forecast[],
+  opts: DecideOpts = {},
 ) {
   let plannedL = 0;
   let savedL = 0;
@@ -161,7 +175,7 @@ export function weekSummary(
     if (!zone) continue;
     const occs = upcomingOccurrences(s, 7);
     for (const o of occs) {
-      const d = decide(s, zone, o, forecasts, last48Mm);
+      const d = decide(s, zone, o, forecasts, last48Mm, opts);
       if (d.action === "skip") {
         skipCount++;
         savedL += litersForSession(zone, s.duration_min);
@@ -172,6 +186,68 @@ export function weekSummary(
     }
   }
   return { plannedL, savedL, waterCount, skipCount };
+}
+
+/** Soil deficit estimate for a zone (0=saturated, 1=very dry). Uses last 7d ET0 - precip. */
+export function moistureDeficit(zone: Zone, forecasts: Forecast[], wateredMmLast7d = 0): number {
+  // forecasts[0..6] is "today + 6 next days"; we don't have past data here, so use a rolling
+  // estimate based on next-day ET0 vs already-fallen rain proxy.
+  const past = forecasts.slice(0, 7);
+  const et0 = past.reduce((a, b) => a + (b.et0 ?? 3), 0);
+  const rain = past.reduce((a, b) => a + (b.precip_mm ?? 0), 0);
+  const sunBoost = (zone.sun_exposure ?? "sun").startsWith("sun") ? 1.15 : 0.85;
+  const soilHold = zone.soil === "sand" ? 0.7 : zone.soil === "clay" ? 1.25 : 1.0;
+  const need = et0 * sunBoost;
+  const supply = (rain + wateredMmLast7d) * soilHold;
+  const ratio = Math.max(0, Math.min(1, 1 - supply / Math.max(1, need)));
+  return ratio;
+}
+
+/** Total expected precip in next `hours` hours (uses daily granularity, weighted). */
+export function precipNextHours(forecasts: Forecast[], hours = 24): number {
+  if (forecasts.length === 0) return 0;
+  const days = hours / 24;
+  let mm = 0;
+  for (let i = 0; i < Math.ceil(days); i++) {
+    const w = i + 1 <= days ? 1 : days - i;
+    mm += (forecasts[i]?.precip_mm ?? 0) * Math.max(0, w);
+  }
+  return mm;
+}
+
+/** Build an ICS calendar string for the next 14 days of non-skipped occurrences. */
+export function buildICS(
+  schedules: Schedule[],
+  zones: Zone[],
+  forecasts: Forecast[],
+  opts: DecideOpts = {},
+): string {
+  const last48 = forecasts.slice(0, 2).reduce((a, b) => a + b.precip_mm, 0);
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Lovable//Vandingsplan//DA"];
+  const fmt = (d: Date) =>
+    d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  for (const s of schedules) {
+    const z = zones.find((zz) => zz.id === s.zone_id);
+    if (!z) continue;
+    const occs = upcomingOccurrences(s, 14);
+    for (const o of occs) {
+      const d = decide(s, z, o, forecasts, last48, opts);
+      if (d.action === "skip") continue;
+      const end = new Date(o.getTime() + d.effectiveMin * 60_000);
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:${s.id}-${o.getTime()}@lovable`,
+        `DTSTAMP:${fmt(new Date())}`,
+        `DTSTART:${fmt(o)}`,
+        `DTEND:${fmt(end)}`,
+        `SUMMARY:💧 ${z.name} · ${d.effectiveMin} min`,
+        `DESCRIPTION:${d.reason} · ~${litersForSession(z, d.effectiveMin)} L`,
+        "END:VEVENT",
+      );
+    }
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
 }
 
 const FC_CACHE_KEY = "watering.forecast.v1";
