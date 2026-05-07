@@ -456,6 +456,12 @@ export default function WateringPlan() {
                       </div>
                     </div>
 
+                    {forecasts.length > 0 && (
+                      <div style={{ marginBottom: 14 }}>
+                        <MoistureGauge deficit={moistureDeficit(z, forecasts)} />
+                      </div>
+                    )}
+
                     {zSchedules.length > 0 && forecasts.length > 0 && (
                       <div style={{ marginBottom: 14 }}>
                         <WeekStrip schedules={zSchedules} zone={z} forecasts={forecasts} />
@@ -471,12 +477,14 @@ export default function WateringPlan() {
                     <div style={{ display: "grid", gap: 10 }}>
                       {zSchedules.map((s) => {
                         const next = upcomingOccurrences(s, 7)[0];
-                        const dec = next ? decide(s, z, next, forecasts, last48) : null;
+                        const dec = next ? decide(s, z, next, forecasts, last48, decideOpts) : null;
                         const nextLabel = next ? `${formatDate(next)} kl. ${s.start_time.slice(0, 5)}` : undefined;
                         return (
                           <ScheduleRow key={s.id} s={s} decision={dec} nextLabel={nextLabel}
                             onChange={(patch) => updateSchedule(s.id, patch)}
-                            onDelete={() => deleteSchedule(s.id)} />
+                            onDelete={() => deleteSchedule(s.id)}
+                            onSnoozeNext={() => snoozeNext(s.id)}
+                            onDuplicate={() => duplicateSchedule(s)} />
                         );
                       })}
                     </div>
