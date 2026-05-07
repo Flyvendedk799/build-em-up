@@ -32,7 +32,7 @@ type EventRow = {
   ran_at: string | null; weather_skipped: boolean; reason: string | null; mm_delivered: number | null;
 };
 
-const DAYS = ["M", "T", "O", "T", "F", "L", "S"];
+
 
 export default function WateringPlan() {
   const { user, loading: authLoading } = useAuth();
