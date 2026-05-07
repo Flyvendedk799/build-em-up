@@ -134,7 +134,7 @@ export default function WateringPlan() {
       weekday_mask: 21, start_time: "06:30:00", duration_min: 15,
       enabled: true, ai_adjusted: true,
     }).select().single();
-    if (error) toast.error(error.message);
+    if (error || !data) { toast.error(error?.message ?? "Fejl"); return; }
     setSchedules(prev => [...prev, data as Schedule]);
   }
   async function updateSchedule(id: string, patch: Partial<Schedule>) {
