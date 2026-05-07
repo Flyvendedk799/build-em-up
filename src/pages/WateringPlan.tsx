@@ -93,7 +93,7 @@ export default function WateringPlan() {
   const summary = useMemo(() => weekSummary(schedules, zones, forecasts), [schedules, zones, forecasts]);
 
   // ----- Bed CRUD -----
-  async function saveBed(b: BedDraft) {
+  async function saveBed(b: BedDraft): Promise<void> {
     if (!user || !garden) return;
     if (b.id) {
       const { error } = await supabase.from("garden_zones").update({
