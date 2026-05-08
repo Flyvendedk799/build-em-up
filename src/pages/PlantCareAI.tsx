@@ -116,6 +116,17 @@ export default function PlantCareAI() {
         content: persistedText,
       });
 
+      // If image present, run structured diagnosis in parallel for a richer card
+      let diagnosis: Diagnosis | null = null;
+      if (imageDataUrl) {
+        try {
+          const { data: dx } = await supabase.functions.invoke("plant-diagnose", {
+            body: { imageDataUrl, note: trimmed },
+          });
+          if (dx && !(dx as any).error) diagnosis = dx as Diagnosis;
+        } catch (e) { console.warn("diagnose failed", e); }
+      }
+
       // Call edge function with streaming
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/plant-care-chat`;
       const resp = await fetch(url, {
@@ -124,7 +135,7 @@ export default function PlantCareAI() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: history, hasImage: !!imageDataUrl }),
+        body: JSON.stringify({ messages: history, hasImage: !!imageDataUrl, diagnosis }),
       });
 
       if (resp.status === 429) { toast.error("For mange beskeder — prøv igen om lidt."); setStreaming(false); return; }
@@ -137,7 +148,7 @@ export default function PlantCareAI() {
       let assistantText = "";
       let done = false;
 
-      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+      setMessages(prev => [...prev, { role: "assistant", content: "", diagnosis: diagnosis ?? undefined }]);
 
       while (!done) {
         const { done: d, value } = await reader.read();
