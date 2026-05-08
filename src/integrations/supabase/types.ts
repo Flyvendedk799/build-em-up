@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_recommendations: {
+        Row: {
+          body: string | null
+          created_at: string
+          data: Json | null
+          garden_id: string | null
+          id: string
+          kind: string
+          resolved_at: string | null
+          severity: string
+          status: string
+          title: string
+          user_id: string
+          zone_id: string | null
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          data?: Json | null
+          garden_id?: string | null
+          id?: string
+          kind: string
+          resolved_at?: string | null
+          severity?: string
+          status?: string
+          title: string
+          user_id: string
+          zone_id?: string | null
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          data?: Json | null
+          garden_id?: string | null
+          id?: string
+          kind?: string
+          resolved_at?: string | null
+          severity?: string
+          status?: string
+          title?: string
+          user_id?: string
+          zone_id?: string | null
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action: string
@@ -177,36 +222,51 @@ export type Database = {
           created_at: string
           garden_id: string
           id: string
+          microclimate: Json | null
+          mulch: boolean | null
           name: string
           polygon: Json | null
+          shade_pct: number | null
+          slope: string | null
           soil: string | null
           sun_exposure: string | null
           type: Database["public"]["Enums"]["zone_type"]
           user_id: string
+          wind_exposure: string | null
         }
         Insert: {
           area_m2?: number | null
           created_at?: string
           garden_id: string
           id?: string
+          microclimate?: Json | null
+          mulch?: boolean | null
           name: string
           polygon?: Json | null
+          shade_pct?: number | null
+          slope?: string | null
           soil?: string | null
           sun_exposure?: string | null
           type?: Database["public"]["Enums"]["zone_type"]
           user_id: string
+          wind_exposure?: string | null
         }
         Update: {
           area_m2?: number | null
           created_at?: string
           garden_id?: string
           id?: string
+          microclimate?: Json | null
+          mulch?: boolean | null
           name?: string
           polygon?: Json | null
+          shade_pct?: number | null
+          slope?: string | null
           soil?: string | null
           sun_exposure?: string | null
           type?: Database["public"]["Enums"]["zone_type"]
           user_id?: string
+          wind_exposure?: string | null
         }
         Relationships: [
           {
@@ -414,15 +474,63 @@ export type Database = {
         }
         Relationships: []
       }
+      plant_health_log: {
+        Row: {
+          created_at: string
+          diagnosis: string | null
+          id: string
+          image_url: string | null
+          plant_id: string | null
+          product_suggestions: Json | null
+          raw: Json | null
+          severity: string | null
+          treatment: string | null
+          user_id: string
+          zone_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          diagnosis?: string | null
+          id?: string
+          image_url?: string | null
+          plant_id?: string | null
+          product_suggestions?: Json | null
+          raw?: Json | null
+          severity?: string | null
+          treatment?: string | null
+          user_id: string
+          zone_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          diagnosis?: string | null
+          id?: string
+          image_url?: string | null
+          plant_id?: string | null
+          product_suggestions?: Json | null
+          raw?: Json | null
+          severity?: string | null
+          treatment?: string | null
+          user_id?: string
+          zone_id?: string | null
+        }
+        Relationships: []
+      }
       plants_catalog: {
         Row: {
           category: string | null
+          companion_plants: string[] | null
           created_at: string
           description: string | null
+          disease_risks: string[] | null
+          frost_risk: string | null
           harvest_months: number[] | null
           image_url: string | null
+          kc: number | null
           latin: string | null
+          month_tasks: Json | null
           name_da: string
+          root_depth_cm: number | null
           slug: string
           sow_months: number[] | null
           sun: string | null
@@ -430,12 +538,18 @@ export type Database = {
         }
         Insert: {
           category?: string | null
+          companion_plants?: string[] | null
           created_at?: string
           description?: string | null
+          disease_risks?: string[] | null
+          frost_risk?: string | null
           harvest_months?: number[] | null
           image_url?: string | null
+          kc?: number | null
           latin?: string | null
+          month_tasks?: Json | null
           name_da: string
+          root_depth_cm?: number | null
           slug: string
           sow_months?: number[] | null
           sun?: string | null
@@ -443,12 +557,18 @@ export type Database = {
         }
         Update: {
           category?: string | null
+          companion_plants?: string[] | null
           created_at?: string
           description?: string | null
+          disease_risks?: string[] | null
+          frost_risk?: string | null
           harvest_months?: number[] | null
           image_url?: string | null
+          kc?: number | null
           latin?: string | null
+          month_tasks?: Json | null
           name_da?: string
+          root_depth_cm?: number | null
           slug?: string
           sow_months?: number[] | null
           sun?: string | null
@@ -620,6 +740,51 @@ export type Database = {
         }
         Relationships: []
       }
+      task_log: {
+        Row: {
+          created_at: string
+          done: boolean
+          done_at: string | null
+          due_at: string | null
+          garden_id: string | null
+          id: string
+          kind: string
+          notes: string | null
+          plant_id: string | null
+          title: string
+          user_id: string
+          zone_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          done?: boolean
+          done_at?: string | null
+          due_at?: string | null
+          garden_id?: string | null
+          id?: string
+          kind: string
+          notes?: string | null
+          plant_id?: string | null
+          title: string
+          user_id: string
+          zone_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          done?: boolean
+          done_at?: string | null
+          due_at?: string | null
+          garden_id?: string | null
+          id?: string
+          kind?: string
+          notes?: string | null
+          plant_id?: string | null
+          title?: string
+          user_id?: string
+          zone_id?: string | null
+        }
+        Relationships: []
+      }
       user_plants: {
         Row: {
           created_at: string
@@ -756,6 +921,45 @@ export type Database = {
           },
         ]
       }
+      watering_runs: {
+        Row: {
+          created_at: string
+          id: string
+          liters: number | null
+          mm: number | null
+          notes: string | null
+          ran_at: string
+          schedule_id: string | null
+          source: string
+          user_id: string
+          zone_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          liters?: number | null
+          mm?: number | null
+          notes?: string | null
+          ran_at?: string
+          schedule_id?: string | null
+          source?: string
+          user_id: string
+          zone_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          liters?: number | null
+          mm?: number | null
+          notes?: string | null
+          ran_at?: string
+          schedule_id?: string | null
+          source?: string
+          user_id?: string
+          zone_id?: string | null
+        }
+        Relationships: []
+      }
       watering_schedules: {
         Row: {
           ai_adjusted: boolean
@@ -764,6 +968,7 @@ export type Database = {
           enabled: boolean
           id: string
           name: string
+          rule: Json | null
           start_time: string
           user_id: string
           weekday_mask: number
@@ -776,6 +981,7 @@ export type Database = {
           enabled?: boolean
           id?: string
           name?: string
+          rule?: Json | null
           start_time?: string
           user_id: string
           weekday_mask?: number
@@ -788,6 +994,7 @@ export type Database = {
           enabled?: boolean
           id?: string
           name?: string
+          rule?: Json | null
           start_time?: string
           user_id?: string
           weekday_mask?: number
@@ -802,6 +1009,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      weather_cache: {
+        Row: {
+          date: string
+          et0: number | null
+          fetched_at: string
+          id: string
+          lat: number
+          lng: number
+          precip_mm: number
+          temp_max: number | null
+          temp_min: number | null
+          wind_max: number | null
+        }
+        Insert: {
+          date: string
+          et0?: number | null
+          fetched_at?: string
+          id?: string
+          lat: number
+          lng: number
+          precip_mm?: number
+          temp_max?: number | null
+          temp_min?: number | null
+          wind_max?: number | null
+        }
+        Update: {
+          date?: string
+          et0?: number | null
+          fetched_at?: string
+          id?: string
+          lat?: number
+          lng?: number
+          precip_mm?: number
+          temp_max?: number | null
+          temp_min?: number | null
+          wind_max?: number | null
+        }
+        Relationships: []
       }
       wishlists: {
         Row: {
