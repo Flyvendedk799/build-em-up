@@ -351,7 +351,7 @@ export function saveCachedForecast(lat: number, lng: number, data: Forecast[]) {
 export async function fetchForecast(lat: number, lng: number): Promise<Forecast[]> {
   const cached = loadCachedForecast(lat, lng);
   if (cached) return cached;
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=precipitation_sum,temperature_2m_max,et0_fao_evapotranspiration,wind_speed_10m_max&timezone=Europe%2FCopenhagen&forecast_days=14`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=precipitation_sum,temperature_2m_max,temperature_2m_min,et0_fao_evapotranspiration,wind_speed_10m_max&timezone=Europe%2FCopenhagen&forecast_days=14`;
   const j = await fetch(url).then((r) => r.json());
   const dates: string[] = j?.daily?.time ?? [];
   const out: Forecast[] = dates.map((d, i) => ({
