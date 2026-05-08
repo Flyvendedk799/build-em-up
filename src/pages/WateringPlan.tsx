@@ -440,8 +440,46 @@ export default function WateringPlan() {
           </motion.div>
         )}
 
-        {/* Zone cards */}
+        {/* Smart insights — always visible above tabs */}
+        {garden && zones.length > 0 && forecasts.length > 0 && (
+          <SmartInsights schedules={schedules} zones={zones} forecasts={forecasts} opts={decideOpts} />
+        )}
+
+        {/* View tabs */}
         {garden && zones.length > 0 && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 18, padding: 4, background: "var(--ink-50)", borderRadius: 100, width: "fit-content" }}>
+            {([
+              { k: "cards", label: "Bede", icon: LayoutGrid },
+              { k: "calendar", label: "Kalender", icon: CalendarDays },
+              { k: "coach", label: "Sæson", icon: Leaf },
+            ] as const).map(({ k, label, icon: Icon }) => (
+              <button key={k} onClick={() => setViewPersist(k)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "8px 14px", borderRadius: 100, border: "none",
+                  background: view === k ? "var(--paper)" : "transparent",
+                  boxShadow: view === k ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                  color: view === k ? "var(--ink-900)" : "var(--ink-500)",
+                  fontSize: 13, fontWeight: 500, cursor: "pointer",
+                }}>
+                <Icon size={14} /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Calendar view */}
+        {garden && zones.length > 0 && view === "calendar" && (
+          <CalendarTimeline schedules={schedules} zones={zones} forecasts={forecasts} opts={decideOpts} onSnooze={snoozeOn} />
+        )}
+
+        {/* Seasonal coach view */}
+        {garden && zones.length > 0 && view === "coach" && user && (
+          <SeasonalCoach userId={user.id} gardenId={garden.id} />
+        )}
+
+        {/* Zone cards (default) */}
+        {garden && zones.length > 0 && view === "cards" && (
           <div style={{ display: "grid", gap: 18, marginBottom: 40 }}>
             <AnimatePresence initial={false}>
               {zones.map((z, idx) => {
