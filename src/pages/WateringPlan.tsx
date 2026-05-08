@@ -74,6 +74,17 @@ export default function WateringPlan() {
     } catch { return new Set(); }
   });
   const [rainDismissedAt, setRainDismissedAt] = useState<string | null>(() => localStorage.getItem("watering.rainDismissed"));
+  const [view, setView] = useState<"cards" | "calendar" | "coach">(() => (localStorage.getItem("watering.view") as any) || "cards");
+  function setViewPersist(v: "cards" | "calendar" | "coach") {
+    setView(v); localStorage.setItem("watering.view", v);
+  }
+  function snoozeOn(scheduleId: string, dateISO: string) {
+    const key = `${scheduleId}:${dateISO}`;
+    const ns = new Set(snoozedKeys); ns.add(key);
+    setSnoozedKeys(ns);
+    localStorage.setItem("watering.snoozed", JSON.stringify([...ns]));
+    toast.success("Sprunget over");
+  }
 
   function setPauseUntil(iso: string | null) {
     if (iso) { localStorage.setItem("watering.pauseUntil", iso); setPauseUntilState(new Date(iso)); toast.success("Vanding pauseret"); }
