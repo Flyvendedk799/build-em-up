@@ -708,7 +708,11 @@ export default function GardenSizer() {
     const { useActiveGarden } = await import("@/lib/activeGarden");
     useActiveGarden.getState().setActive(g.id);
     try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
-    toast.success("Have gemt"); navigate("/konto");
+    toast.success("Have gemt", {
+      action: { label: "Lav vandingsplan", onClick: () => navigate("/vanding") },
+      duration: 6000,
+    });
+    navigate("/konto");
   }
 
   // ----- Render -----
