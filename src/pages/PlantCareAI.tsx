@@ -5,9 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import DiagnosisCard, { type Diagnosis } from "@/components/plantcare/DiagnosisCard";
 
 type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
-type Msg = { role: "user" | "assistant"; content: string | ContentPart[] };
+type Msg = { role: "user" | "assistant"; content: string | ContentPart[]; diagnosis?: Diagnosis };
 type Conv = { id: string; title: string; updated_at: string };
 
 const STARTERS = [
