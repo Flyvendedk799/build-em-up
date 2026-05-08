@@ -345,7 +345,10 @@ export default function PlantCareAI() {
                         )}
                         <div className="prose-chat" style={{ fontSize: 15, lineHeight: 1.65, color: "var(--ink-900)" }}>
                           {m.role === "assistant" ? (
-                            <ReactMarkdown>{text || "…"}</ReactMarkdown>
+                            <>
+                              {m.diagnosis && <div style={{ marginBottom: 14 }}><DiagnosisCard d={m.diagnosis} /></div>}
+                              <ReactMarkdown>{text || (m.diagnosis ? "" : "…")}</ReactMarkdown>
+                            </>
                           ) : (
                             <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
                           )}
