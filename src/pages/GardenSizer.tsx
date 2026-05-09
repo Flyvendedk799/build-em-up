@@ -446,7 +446,7 @@ export default function GardenSizer() {
     // Wand area preview / analyzed bbox
     const wandData: any = { type: "FeatureCollection", features: [] };
     const previewBbox = mode === "wand" && wandHoverPos ? (() => {
-      const m = 45 / 111320; const lng = 45 / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
+      const m = 25 / 111320; const lng = 25 / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
       return [wandHoverPos[0] - lng, wandHoverPos[1] - m, wandHoverPos[0] + lng, wandHoverPos[1] + m] as [number, number, number, number];
     })() : (mode === "wand" ? wandBbox : null);
     if (previewBbox) {
