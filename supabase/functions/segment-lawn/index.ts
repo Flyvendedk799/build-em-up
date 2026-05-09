@@ -71,6 +71,7 @@ async function callModel(model: string, prompt: string, b64: string, aiKey: stri
       body: JSON.stringify({
         model,
         temperature: 0.1,
+        response_format: { type: "json_object" },
         messages: [{
           role: "user",
           content: [
@@ -80,10 +81,15 @@ async function callModel(model: string, prompt: string, b64: string, aiKey: stri
         }],
       }),
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const errTxt = await r.text().catch(() => "");
+      console.warn(`[${model}] HTTP ${r.status}: ${errTxt.slice(0, 200)}`);
+      return null;
+    }
     const j = await r.json();
     return j.choices?.[0]?.message?.content ?? "";
-  } catch {
+  } catch (e) {
+    console.warn(`[${model}] fetch error:`, String(e));
     return null;
   } finally {
     clearTimeout(timeout);
