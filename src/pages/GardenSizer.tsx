@@ -11,7 +11,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { unionRings, subtractRings, pixelDistance } from "@/lib/polygonOps";
 import PinpointSequence from "@/components/havemaaler/PinpointSequence";
 
-type Suggestion = { id: string; place_name: string; center: [number, number]; text: string };
+type Suggestion = { id: string; place_name: string; center: [number, number]; text: string; source?: "dawa" | "mapbox" };
 type LngLat = [number, number];
 type Ring = LngLat[];
 type Mode = "draw" | "exclude" | "edit" | "wand";
@@ -19,6 +19,25 @@ type WandOp = "replace" | "add" | "subtract";
 type Imagery = "ortofoto" | "mapbox";
 
 const AUTOSAVE_KEY = "havemaaler:draft:v2";
+const WAND_CROP_METERS = 36;
+const WAND_IMAGE_SIZE = 768;
+const WAND_TIMEOUT_MS = 18000;
+
+function ringBbox(ring?: Ring | null): [number, number, number, number] | undefined {
+  if (!ring || ring.length < 3) return undefined;
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  for (const [lng, lat] of ring) {
+    if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+  }
+  return [minLng, minLat, maxLng, maxLat];
+}
+
+function clipBboxToParcel(bbox: [number, number, number, number], parcel?: Ring | null): [number, number, number, number] {
+  const parcelBox = ringBbox(parcel);
+  if (!parcelBox) return bbox;
+  return [Math.max(bbox[0], parcelBox[0]), Math.max(bbox[1], parcelBox[1]), Math.min(bbox[2], parcelBox[2]), Math.min(bbox[3], parcelBox[3])];
+}
 
 const TIERS = [
   { name: "Klipper R1 Mini",   tier: "Indgangsmodel", max: 600,  price: "6.299 kr",  battery: "90 min",  noise: "52 dB" },
@@ -97,13 +116,27 @@ export default function GardenSizer() {
 
   // ----- Geocode (debounced) -----
   useEffect(() => {
-    if (!mapboxToken || query.trim().length < 2) { setSuggestions([]); return; }
+    if (query.trim().length < 2) { setSuggestions([]); return; }
     const t = setTimeout(async () => {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?country=dk&language=da&limit=6&access_token=${mapboxToken}`;
+      const dawaUrl = `https://api.dataforsyningen.dk/adresser/autocomplete?q=${encodeURIComponent(query)}&type=adresse&per_side=6`;
       try {
-        const r = await fetch(url); const j = await r.json();
-        setSuggestions((j.features ?? []).map((f: any) => ({
-          id: f.id, place_name: f.place_name, center: f.center as LngLat, text: f.text,
+        const r = await fetch(dawaUrl); const j = await r.json();
+        const exact = (Array.isArray(j) ? j : [])
+          .map((item: any) => item?.adresse)
+          .filter((a: any) => Number.isFinite(a?.x) && Number.isFinite(a?.y))
+          .map((a: any) => ({
+            id: a.id,
+            place_name: `${a.vejnavn} ${a.husnr}, ${a.postnr} ${a.postnrnavn}`,
+            center: [a.x, a.y] as LngLat,
+            text: `${a.vejnavn} ${a.husnr}`,
+            source: "dawa" as const,
+          }));
+        if (exact.length) { setSuggestions(exact); return; }
+        if (!mapboxToken) return;
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?country=dk&language=da&limit=6&access_token=${mapboxToken}`;
+        const mr = await fetch(url); const mj = await mr.json();
+        setSuggestions((mj.features ?? []).map((f: any) => ({
+          id: f.id, place_name: f.place_name, center: f.center as LngLat, text: f.text, source: "mapbox" as const,
         })));
       } catch { /* ignore */ }
     }, 220);
@@ -123,6 +156,7 @@ export default function GardenSizer() {
     if (imagery === "ortofoto" && ortoCfg) {
       return {
         version: 8,
+        glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
         sources: {
           orto: {
             type: "raster",
@@ -446,8 +480,9 @@ export default function GardenSizer() {
     // Wand area preview / analyzed bbox
     const wandData: any = { type: "FeatureCollection", features: [] };
     const previewBbox = mode === "wand" && wandHoverPos ? (() => {
-      const m = 25 / 111320; const lng = 25 / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
-      return [wandHoverPos[0] - lng, wandHoverPos[1] - m, wandHoverPos[0] + lng, wandHoverPos[1] + m] as [number, number, number, number];
+      const half = WAND_CROP_METERS / 2;
+      const lat = half / 111320; const lng = half / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
+      return clipBboxToParcel([wandHoverPos[0] - lng, wandHoverPos[1] - lat, wandHoverPos[0] + lng, wandHoverPos[1] + lat], matrikel);
     })() : (mode === "wand" ? wandBbox : null);
     if (previewBbox) {
       const [w, s, e, n] = previewBbox;
@@ -545,9 +580,9 @@ export default function GardenSizer() {
   }
 
   // ----- Matrikel lookup -----
-  async function loadMatrikel() {
-    if (!chosen) return;
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-matrikel?lng=${chosen.center[0]}&lat=${chosen.center[1]}`;
+  async function loadMatrikel(center = chosen?.center) {
+    if (!center) return;
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-matrikel?lng=${center[0]}&lat=${center[1]}`;
     try {
       const r = await fetch(url, { headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY } });
       const j = await r.json();
@@ -568,25 +603,23 @@ export default function GardenSizer() {
 
   // ----- Magic wand (AI) -----
   async function runMagicWand(click: LngLat) {
+    if (wandLoading) return;
     setWandLoading(true);
     try {
-      // If we have a matrikel (cadastral parcel) loaded, send its bbox so the AI
-      // focuses only on the user's actual property — never neighbours' lawns.
-      let parcelBbox: [number, number, number, number] | undefined;
-      if (matrikel && matrikel.length >= 3) {
-        let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
-        for (const [lng, lat] of matrikel) {
-          if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
-          if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
-        }
-        parcelBbox = [minLng, minLat, maxLng, maxLat];
-      }
-      const { data, error } = await supabase.functions.invoke("segment-lawn", {
-        body: { click, cropMeters: 50, width: 1024, height: 1024, parcelBbox },
-      });
-      if (error || !data?.polygon) {
-        const msg = (error as any)?.message || (data as any)?.error || "";
-        if ((data as any)?.fallback) toast.error("AI-tjenesten er midlertidigt utilgængelig — prøv igen om lidt eller tegn manuelt");
+      const parcelBbox = ringBbox(matrikel);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), WAND_TIMEOUT_MS);
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/segment-lawn`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+        body: JSON.stringify({ click, cropMeters: WAND_CROP_METERS, width: WAND_IMAGE_SIZE, height: WAND_IMAGE_SIZE, parcelBbox, parcelPolygon: matrikel ?? undefined }),
+      }).finally(() => window.clearTimeout(timeout));
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.polygon) {
+        const msg = data?.error || response.statusText || "";
+        if (msg.toLowerCase().includes("abort")) toast.error("AI tog for lang tid — prøv et mindre klik midt på plænen eller tegn manuelt");
+        else if ((data as any)?.fallback) toast.error("AI-tjenesten er midlertidigt utilgængelig — prøv igen om lidt eller tegn manuelt");
         else toast.error(msg.includes("402") ? "AI-kreditter brugt op" : msg.includes("429") ? "Travl gateway — prøv igen om lidt" : "AI-opmåling fejlede");
         return;
       }
@@ -619,8 +652,8 @@ export default function GardenSizer() {
         data.cached ? "Hentet fra cache" :
         `AI-forslag klar (${conf}% sikker)${exCount ? ` · ${exCount} udeladt` : ""}`,
       );
-    } catch {
-      toast.error("AI-opmåling fejlede");
+    } catch (e: any) {
+      toast.error(e?.name === "AbortError" ? "AI tog for lang tid — prøv et mindre klik midt på plænen eller tegn manuelt" : "AI-opmåling fejlede");
     } finally { setWandLoading(false); }
   }
 
@@ -903,7 +936,7 @@ export default function GardenSizer() {
                 </div>
 
                 <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-                  <button className="tool-btn" onClick={loadMatrikel}>Hent matrikel</button>
+                  <button className="tool-btn" onClick={() => loadMatrikel()}>Hent matrikel</button>
                   {matrikel && <button className="tool-btn" onClick={useMatrikelAsBase}>Brug matrikel som plæne</button>}
                   <button className="tool-btn" onClick={() => {
                     if (!navigator.geolocation) { toast("Geolocation ikke tilgængelig"); return; }
@@ -969,7 +1002,7 @@ export default function GardenSizer() {
             setStep(2);
             setPinpointing(null);
             // Auto-load the cadastral parcel so AI is constrained to the user's property.
-            setTimeout(() => { loadMatrikel().catch(() => {}); }, 50);
+            setTimeout(() => { loadMatrikel(pinpointing.center).catch(() => {}); }, 50);
           }}
         />
       )}
