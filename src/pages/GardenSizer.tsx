@@ -968,6 +968,8 @@ export default function GardenSizer() {
             setChosen({ name: pinpointing.name, center: pinpointing.center });
             setStep(2);
             setPinpointing(null);
+            // Auto-load the cadastral parcel so AI is constrained to the user's property.
+            setTimeout(() => { loadMatrikel().catch(() => {}); }, 50);
           }}
         />
       )}
