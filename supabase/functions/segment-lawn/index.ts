@@ -233,8 +233,9 @@ Deno.serve(async (req) => {
     }
     const b64 = btoa(bin);
 
-    const px = Math.round(width / 2);
-    const py = Math.round(height / 2);
+    // Click pixel within the (possibly parcel-clipped) crop
+    const px = Math.round(((clng - minLng) / (maxLng - minLng)) * width);
+    const py = Math.round(((maxLat - clat) / (maxLat - minLat)) * height);
 
     const models = ["google/gemini-2.5-pro", "google/gemini-2.5-flash"];
 
