@@ -652,8 +652,8 @@ export default function GardenSizer() {
         data.cached ? "Hentet fra cache" :
         `AI-forslag klar (${conf}% sikker)${exCount ? ` · ${exCount} udeladt` : ""}`,
       );
-    } catch {
-      toast.error("AI-opmåling fejlede");
+    } catch (e: any) {
+      toast.error(e?.name === "AbortError" ? "AI tog for lang tid — prøv et mindre klik midt på plænen eller tegn manuelt" : "AI-opmåling fejlede");
     } finally { setWandLoading(false); }
   }
 
