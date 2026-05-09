@@ -571,7 +571,7 @@ export default function GardenSizer() {
     setWandLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("segment-lawn", {
-        body: { click, cropMeters: 90, width: 768, height: 768 },
+        body: { click, cropMeters: 70, width: 1024, height: 1024 },
       });
       if (error || !data?.polygon) {
         const msg = (error as any)?.message || (data as any)?.error || "";
@@ -594,11 +594,20 @@ export default function GardenSizer() {
         if (sub) setMain(sub); else toast("Kunne ikke trække fra");
       } else {
         setMain(simplified); setMainClosed(true); setMode("edit");
+        // Also import any AI-detected exclusions (flowerbeds, decks, ponds inside lawn)
+        const aiExc = Array.isArray((data as any).exclusions) ? (data as any).exclusions as LngLat[][] : [];
+        if (aiExc.length) {
+          setExclusions(aiExc.filter((r) => Array.isArray(r) && r.length >= 3));
+        }
       }
       setWandConfidence(data.confidence ?? null);
       setWandBbox(data.bbox ?? null);
       const conf = Math.round((data.confidence ?? 0.7) * 100);
-      toast.success(data.cached ? "Hentet fra cache" : `AI-forslag klar (${conf}% sikker)`);
+      const exCount = Array.isArray((data as any).exclusions) ? (data as any).exclusions.length : 0;
+      toast.success(
+        data.cached ? "Hentet fra cache" :
+        `AI-forslag klar (${conf}% sikker)${exCount ? ` · ${exCount} udeladt` : ""}`,
+      );
     } catch {
       toast.error("AI-opmåling fejlede");
     } finally { setWandLoading(false); }
