@@ -60,9 +60,9 @@ function dedupeVertices(poly: [number, number][]): [number, number][] {
   return out;
 }
 
-async function callModel(model: string, prompt: string, b64: string, aiKey: string): Promise<string | null> {
+async function callModel(model: string, prompt: string, b64: string, aiKey: string, timeoutMs = 13500): Promise<string | null> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 13500);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const r = await fetch(LOVABLE_API, {
       method: "POST",
