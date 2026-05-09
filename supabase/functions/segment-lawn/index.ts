@@ -195,7 +195,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const cacheKey = hashKey(JSON.stringify({ click: [clng.toFixed(6), clat.toFixed(6)], cropMeters, hint: hint ?? "", parcel: parcelBbox?.map(n=>n.toFixed(5)).join(",") ?? "", v: 4 }));
+    const cacheKey = hashKey(JSON.stringify({ click: [clng.toFixed(6), clat.toFixed(6)], cropMeters, width, height, hint: hint ?? "", parcel: parcelBbox?.map(n=>n.toFixed(5)).join(",") ?? "", v: 5 }));
     const supaUrl = Deno.env.get("SUPABASE_URL")!;
     const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
