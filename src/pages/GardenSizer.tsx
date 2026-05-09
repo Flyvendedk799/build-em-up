@@ -580,9 +580,9 @@ export default function GardenSizer() {
   }
 
   // ----- Matrikel lookup -----
-  async function loadMatrikel() {
-    if (!chosen) return;
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-matrikel?lng=${chosen.center[0]}&lat=${chosen.center[1]}`;
+  async function loadMatrikel(center = chosen?.center) {
+    if (!center) return;
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-matrikel?lng=${center[0]}&lat=${center[1]}`;
     try {
       const r = await fetch(url, { headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY } });
       const j = await r.json();
@@ -999,7 +999,7 @@ export default function GardenSizer() {
             setStep(2);
             setPinpointing(null);
             // Auto-load the cadastral parcel so AI is constrained to the user's property.
-            setTimeout(() => { loadMatrikel().catch(() => {}); }, 50);
+            setTimeout(() => { loadMatrikel(pinpointing.center).catch(() => {}); }, 50);
           }}
         />
       )}
