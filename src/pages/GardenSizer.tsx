@@ -480,8 +480,9 @@ export default function GardenSizer() {
     // Wand area preview / analyzed bbox
     const wandData: any = { type: "FeatureCollection", features: [] };
     const previewBbox = mode === "wand" && wandHoverPos ? (() => {
-      const m = 25 / 111320; const lng = 25 / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
-      return [wandHoverPos[0] - lng, wandHoverPos[1] - m, wandHoverPos[0] + lng, wandHoverPos[1] + m] as [number, number, number, number];
+      const half = WAND_CROP_METERS / 2;
+      const lat = half / 111320; const lng = half / (111320 * Math.cos(wandHoverPos[1] * Math.PI / 180));
+      return clipBboxToParcel([wandHoverPos[0] - lng, wandHoverPos[1] - lat, wandHoverPos[0] + lng, wandHoverPos[1] + lat], matrikel);
     })() : (mode === "wand" ? wandBbox : null);
     if (previewBbox) {
       const [w, s, e, n] = previewBbox;
@@ -602,25 +603,20 @@ export default function GardenSizer() {
 
   // ----- Magic wand (AI) -----
   async function runMagicWand(click: LngLat) {
+    if (wandLoading) return;
     setWandLoading(true);
     try {
-      // If we have a matrikel (cadastral parcel) loaded, send its bbox so the AI
-      // focuses only on the user's actual property — never neighbours' lawns.
-      let parcelBbox: [number, number, number, number] | undefined;
-      if (matrikel && matrikel.length >= 3) {
-        let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
-        for (const [lng, lat] of matrikel) {
-          if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
-          if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
-        }
-        parcelBbox = [minLng, minLat, maxLng, maxLat];
-      }
+      const parcelBbox = ringBbox(matrikel);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), WAND_TIMEOUT_MS);
       const { data, error } = await supabase.functions.invoke("segment-lawn", {
-        body: { click, cropMeters: 50, width: 1024, height: 1024, parcelBbox },
-      });
+        body: { click, cropMeters: WAND_CROP_METERS, width: WAND_IMAGE_SIZE, height: WAND_IMAGE_SIZE, parcelBbox },
+        signal: controller.signal,
+      } as any).finally(() => window.clearTimeout(timeout));
       if (error || !data?.polygon) {
         const msg = (error as any)?.message || (data as any)?.error || "";
-        if ((data as any)?.fallback) toast.error("AI-tjenesten er midlertidigt utilgængelig — prøv igen om lidt eller tegn manuelt");
+        if (msg.toLowerCase().includes("abort")) toast.error("AI tog for lang tid — prøv et mindre klik midt på plænen eller tegn manuelt");
+        else if ((data as any)?.fallback) toast.error("AI-tjenesten er midlertidigt utilgængelig — prøv igen om lidt eller tegn manuelt");
         else toast.error(msg.includes("402") ? "AI-kreditter brugt op" : msg.includes("429") ? "Travl gateway — prøv igen om lidt" : "AI-opmåling fejlede");
         return;
       }
