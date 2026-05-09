@@ -609,12 +609,15 @@ export default function GardenSizer() {
       const parcelBbox = ringBbox(matrikel);
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), WAND_TIMEOUT_MS);
-      const { data, error } = await supabase.functions.invoke("segment-lawn", {
-        body: { click, cropMeters: WAND_CROP_METERS, width: WAND_IMAGE_SIZE, height: WAND_IMAGE_SIZE, parcelBbox, parcelPolygon: matrikel ?? undefined },
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/segment-lawn`, {
+        method: "POST",
         signal: controller.signal,
-      } as any).finally(() => window.clearTimeout(timeout));
-      if (error || !data?.polygon) {
-        const msg = (error as any)?.message || (data as any)?.error || "";
+        headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+        body: JSON.stringify({ click, cropMeters: WAND_CROP_METERS, width: WAND_IMAGE_SIZE, height: WAND_IMAGE_SIZE, parcelBbox, parcelPolygon: matrikel ?? undefined }),
+      }).finally(() => window.clearTimeout(timeout));
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.polygon) {
+        const msg = data?.error || response.statusText || "";
         if (msg.toLowerCase().includes("abort")) toast.error("AI tog for lang tid — prøv et mindre klik midt på plænen eller tegn manuelt");
         else if ((data as any)?.fallback) toast.error("AI-tjenesten er midlertidigt utilgængelig — prøv igen om lidt eller tegn manuelt");
         else toast.error(msg.includes("402") ? "AI-kreditter brugt op" : msg.includes("429") ? "Travl gateway — prøv igen om lidt" : "AI-opmåling fejlede");
