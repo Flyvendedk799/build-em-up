@@ -610,7 +610,7 @@ export default function GardenSizer() {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), WAND_TIMEOUT_MS);
       const { data, error } = await supabase.functions.invoke("segment-lawn", {
-        body: { click, cropMeters: WAND_CROP_METERS, width: WAND_IMAGE_SIZE, height: WAND_IMAGE_SIZE, parcelBbox },
+        body: { click, cropMeters: WAND_CROP_METERS, width: WAND_IMAGE_SIZE, height: WAND_IMAGE_SIZE, parcelBbox, parcelPolygon: matrikel ?? undefined },
         signal: controller.signal,
       } as any).finally(() => window.clearTimeout(timeout));
       if (error || !data?.polygon) {
