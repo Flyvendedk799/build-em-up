@@ -254,10 +254,16 @@ Deno.serve(async (req) => {
     for (const model of models) {
       // Pass 1
       const txt1 = await callModel(model, buildPrompt(width, height, px, py, { hint, parcelPixels }), b64, aiKey);
-      if (!txt1) { lastError = `${model}: no response`; continue; }
+      if (!txt1) { lastError = `${model}: no response (timeout or upstream error)`; continue; }
       let parsed = parseJson(txt1);
-      if (!parsed?.polygon || !Array.isArray(parsed.polygon) || parsed.polygon.length < 6) {
-        lastError = `${model}: invalid polygon shape`;
+      if (!parsed) {
+        console.warn(`[${model}] unparseable response (first 400 chars):`, txt1.slice(0, 400));
+        lastError = `${model}: unparseable response`;
+        continue;
+      }
+      if (!parsed.polygon || !Array.isArray(parsed.polygon) || parsed.polygon.length < 4) {
+        console.warn(`[${model}] bad polygon (len=${parsed?.polygon?.length}). Raw:`, JSON.stringify(parsed).slice(0, 400));
+        lastError = `${model}: invalid polygon shape (len=${parsed?.polygon?.length ?? 0})`;
         continue;
       }
 
