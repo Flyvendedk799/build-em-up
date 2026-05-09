@@ -140,12 +140,14 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const {
       click,
-      cropMeters = 70,
+      cropMeters = 50,
       width = 1024,
       height = 1024,
       hint,
+      parcelBbox,
     } = body as {
       click: [number, number]; cropMeters?: number; width?: number; height?: number; hint?: string;
+      parcelBbox?: [number, number, number, number]; // [minLng,minLat,maxLng,maxLat]
     };
 
     if (!click || click.length !== 2) {
@@ -165,10 +167,33 @@ Deno.serve(async (req) => {
     const [clng, clat] = click;
     const half = cropMeters / 2;
     const { dLat, dLng } = metersToDeg(half, clat);
-    const minLat = clat - dLat, maxLat = clat + dLat;
-    const minLng = clng - dLng, maxLng = clng + dLng;
+    let minLat = clat - dLat, maxLat = clat + dLat;
+    let minLng = clng - dLng, maxLng = clng + dLng;
 
-    const cacheKey = hashKey(JSON.stringify({ click: [clng.toFixed(6), clat.toFixed(6)], cropMeters, hint: hint ?? "", v: 3 }));
+    // If a parcel bbox is provided, clip the crop window to it (with small padding)
+    // so the AI only sees the user's own property.
+    if (parcelBbox && parcelBbox.length === 4) {
+      const [pMinLng, pMinLat, pMaxLng, pMaxLat] = parcelBbox;
+      const pad = metersToDeg(3, clat); // 3m breathing room
+      minLng = Math.max(minLng, pMinLng - pad.dLng);
+      maxLng = Math.min(maxLng, pMaxLng + pad.dLng);
+      minLat = Math.max(minLat, pMinLat - pad.dLat);
+      maxLat = Math.min(maxLat, pMaxLat + pad.dLat);
+      // Make square (preserves the click center as best as possible)
+      const w = maxLng - minLng, h = maxLat - minLat;
+      if (w > 0 && h > 0) {
+        // expand the smaller axis to match the larger so image isn't stretched
+        if (w > h) {
+          const extra = (w - h) / 2;
+          minLat -= extra; maxLat += extra;
+        } else if (h > w) {
+          const extra = (h - w) / 2 / Math.cos((clat * Math.PI) / 180);
+          minLng -= extra; maxLng += extra;
+        }
+      }
+    }
+
+    const cacheKey = hashKey(JSON.stringify({ click: [clng.toFixed(6), clat.toFixed(6)], cropMeters, hint: hint ?? "", parcel: parcelBbox?.map(n=>n.toFixed(5)).join(",") ?? "", v: 4 }));
     const supaUrl = Deno.env.get("SUPABASE_URL")!;
     const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -208,8 +233,9 @@ Deno.serve(async (req) => {
     }
     const b64 = btoa(bin);
 
-    const px = Math.round(width / 2);
-    const py = Math.round(height / 2);
+    // Click pixel within the (possibly parcel-clipped) crop
+    const px = Math.round(((clng - minLng) / (maxLng - minLng)) * width);
+    const py = Math.round(((maxLat - clat) / (maxLat - minLat)) * height);
 
     const models = ["google/gemini-2.5-pro", "google/gemini-2.5-flash"];
 
