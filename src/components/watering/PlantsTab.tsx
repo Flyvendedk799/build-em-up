@@ -141,7 +141,9 @@ export default function PlantsTab({
         <div className="water-card text-center text-sm text-muted-foreground" style={{ padding: 24 }}>
           Ingen match for "{q}".
         </div>
-      ) : grouped.map(({ zone, plants }) => (
+      ) : grouped.map(({ zone, plants }) => {
+        const zoneConflicts = conflictsByZone[zone.id] ?? [];
+        return (
         <div key={zone.id} className="water-card" style={{ padding: 18 }}>
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -154,6 +156,18 @@ export default function PlantsTab({
               <Plus size={14} className="mr-1" />Tilføj
             </Button>
           </div>
+          {zoneConflicts.length > 0 && (
+            <div className="mb-3 rounded-lg p-2.5 flex items-start gap-2"
+              style={{ background: "#fef3c7", border: "1px solid #fcd34d" }}>
+              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" style={{ color: "#92400e" }} />
+              <div className="text-xs" style={{ color: "#78350f" }}>
+                <strong>Trives dårligt sammen:</strong>{" "}
+                {zoneConflicts.map((c, i) => (
+                  <span key={i}>{i > 0 && ", "}{c.aName} + {c.bName}</span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <AnimatePresence initial={false}>
               {plants.map(p => (
