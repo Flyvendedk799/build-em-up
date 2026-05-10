@@ -28,7 +28,7 @@ export default function IdentifyPlantDialog({
   onOpenChange: (v: boolean) => void;
   zones: Zone[];
   defaultZoneId?: string | null;
-  onAdded: () => void;
+  onAdded: (plant: { id: string; zone_id: string; plant_slug: string | null; custom_name: string | null; qty: number; image_url: string | null; notes: string | null; name_da?: string; water_need?: string | null }) => void;
 }) {
   const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
