@@ -9,6 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { uploadPlantPhoto } from "@/lib/plantPhotos";
+import { getCompanionMaps, relationFor, type CompanionMap } from "@/lib/companion";
+import { Check, X as XIcon } from "lucide-react";
 import type { ZonePlant } from "./PlantChips";
 
 type CatalogDetail = {
