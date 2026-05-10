@@ -590,8 +590,9 @@ export default function WateringPlan() {
           <PlantsTab
             zones={zones}
             plantsByZone={plantsByZone}
-            onOpenPlant={(p, zoneName) => setOpenPlant({ plant: p, zoneName })}
+            onOpenPlant={(p, zoneName) => setOpenPlant({ plant: p, zoneName, zoneId: p.zone_id ?? "" })}
             onAddToZone={(z) => setAddPlantsZone(z as ZoneRow)}
+            onIdentify={() => setIdentifyOpen(true)}
           />
         )}
 
@@ -645,7 +646,7 @@ export default function WateringPlan() {
                         plants={plantsByZone[z.id] ?? []}
                         onAdd={() => setAddPlantsZone(z)}
                         onRemove={(p) => removePlant(z.id, p)}
-                        onOpen={(p) => setOpenPlant({ plant: p, zoneName: z.name })}
+                        onOpen={(p) => setOpenPlant({ plant: p, zoneName: z.name, zoneId: z.id })}
                       />
                     </div>
 
