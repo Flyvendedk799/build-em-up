@@ -140,7 +140,7 @@ export default function WateringPlan() {
           supabase.from("watering_events").select("*")
             .eq("user_id", user.id).order("scheduled_for", { ascending: false }).limit(500),
           supabase.from("user_plants")
-            .select("id,zone_id,plant_slug,custom_name,qty,plants_catalog(name_da,water_need,image_url)")
+            .select("id,zone_id,plant_slug,custom_name,qty,planted_at,notes,plants_catalog(name_da,water_need,image_url)")
             .eq("garden_id", g.id),
         ]);
         setZones((zs ?? []) as ZoneRow[]);
@@ -152,6 +152,7 @@ export default function WateringPlan() {
           (map[p.zone_id] ||= []).push({
             id: p.id, zone_id: p.zone_id, plant_slug: p.plant_slug,
             custom_name: p.custom_name, qty: p.qty,
+            planted_at: p.planted_at, notes: p.notes,
             name_da: p.plants_catalog?.name_da, water_need: p.plants_catalog?.water_need,
             image_url: p.plants_catalog?.image_url,
           });
