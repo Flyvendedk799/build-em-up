@@ -72,6 +72,7 @@ export default function WateringPlan() {
   const [plantsByZone, setPlantsByZone] = useState<Record<string, ZonePlant[]>>({});
   const [addPlantsZone, setAddPlantsZone] = useState<ZoneRow | null>(null);
   const [quickWaterZone, setQuickWaterZone] = useState<ZoneRow | null>(null);
+  const [openPlant, setOpenPlant] = useState<{ plant: ZonePlant; zoneName: string } | null>(null);
 
   // pause + snooze + alert state (persisted to localStorage)
   const [pauseUntil, setPauseUntilState] = useState<Date | null>(() => {
@@ -85,8 +86,8 @@ export default function WateringPlan() {
     } catch { return new Set(); }
   });
   const [rainDismissedAt, setRainDismissedAt] = useState<string | null>(() => localStorage.getItem("watering.rainDismissed"));
-  const [view, setView] = useState<"cards" | "calendar" | "coach" | "insights">(() => (localStorage.getItem("watering.view") as any) || "cards");
-  function setViewPersist(v: "cards" | "calendar" | "coach" | "insights") {
+  const [view, setView] = useState<"cards" | "plants" | "calendar" | "coach" | "insights">(() => (localStorage.getItem("watering.view") as any) || "cards");
+  function setViewPersist(v: "cards" | "plants" | "calendar" | "coach" | "insights") {
     setView(v); localStorage.setItem("watering.view", v);
   }
   function snoozeOn(scheduleId: string, dateISO: string) {
