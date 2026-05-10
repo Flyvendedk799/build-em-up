@@ -765,7 +765,12 @@ export default function WateringPlan() {
         open={identifyOpen}
         onOpenChange={setIdentifyOpen}
         zones={zones.map(z => ({ id: z.id, name: z.name, sun_exposure: z.sun_exposure }))}
-        onAdded={() => { if (activeGardenId) setActive(activeGardenId); }}
+        onAdded={(p) => {
+          setPlantsByZone(prev => ({
+            ...prev,
+            [p.zone_id]: [...(prev[p.zone_id] ?? []), p as ZonePlant],
+          }));
+        }}
       />
 
       <SiteFooter />
