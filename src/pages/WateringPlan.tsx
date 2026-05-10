@@ -710,7 +710,9 @@ export default function WateringPlan() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <Button size="sm" variant="ghost" onClick={() => setQuickWaterZone(z)}><Droplets size={14} className="mr-1" />Vand nu</Button>
+                        <Button size="sm" variant="default" onClick={() => setScanZone(z)} title="Tag foto og lad AI vurdere bedet"><Camera size={14} className="mr-1" />Scan</Button>
+                        <Button size="sm" variant="outline" onClick={() => setChatZone(z)} title="Spørg AI om dette bed"><Sparkles size={14} className="mr-1" />Spørg AI</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setQuickWaterZone(z)}><Droplets size={14} className="mr-1" />Vand</Button>
                         <Button size="sm" variant="ghost" onClick={() => addSchedule(z.id)}><Plus size={14} className="mr-1" />Timer</Button>
                         <Button size="sm" variant="ghost" onClick={() => { setEditing({ id: z.id, name: z.name, type: z.type, area_m2: Number(z.area_m2 ?? 10), sun_exposure: z.sun_exposure ?? "sun", soil: z.soil ?? "loam" }); setBedOpen(true); }}>
                           <Pencil size={14} />
