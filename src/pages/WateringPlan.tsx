@@ -309,7 +309,36 @@ export default function WateringPlan() {
     });
   }
 
-  // ----- AI Plan -----
+  function updatePlantLocal(id: string, patch: Partial<ZonePlant>) {
+    setPlantsByZone(prev => {
+      const next: Record<string, ZonePlant[]> = {};
+      for (const [zid, list] of Object.entries(prev)) {
+        next[zid] = list.map(p => p.id === id ? { ...p, ...patch } : p);
+      }
+      return next;
+    });
+  }
+  function removePlantLocal(id: string) {
+    setPlantsByZone(prev => {
+      const next: Record<string, ZonePlant[]> = {};
+      for (const [zid, list] of Object.entries(prev)) next[zid] = list.filter(p => p.id !== id);
+      return next;
+    });
+  }
+  function movePlantLocal(id: string, newZoneId: string) {
+    setPlantsByZone(prev => {
+      const next: Record<string, ZonePlant[]> = {};
+      let moving: ZonePlant | null = null;
+      for (const [zid, list] of Object.entries(prev)) {
+        next[zid] = list.filter(p => {
+          if (p.id === id) { moving = { ...p, zone_id: newZoneId }; return false; }
+          return true;
+        });
+      }
+      if (moving) next[newZoneId] = [...(next[newZoneId] ?? []), moving];
+      return next;
+    });
+  }
   async function generateAiPlan() {
     if (!garden || zones.length === 0) return;
     setAiOpen(true);
