@@ -640,6 +640,9 @@ export default function WateringPlan() {
         {/* Neighbors view */}
         {view === "neighbors" && <NeighborsTab />}
 
+        {/* IoT view */}
+        {view === "iot" && <IoTTab gardenId={garden?.id ?? null} zones={zones} />}
+
         {/* Seasonal coach view */}
         {garden && zones.length > 0 && view === "coach" && user && (
           <SeasonalCoach userId={user.id} gardenId={garden.id} />
