@@ -643,6 +643,7 @@ export default function WateringPlan() {
                         plants={plantsByZone[z.id] ?? []}
                         onAdd={() => setAddPlantsZone(z)}
                         onRemove={(p) => removePlant(z.id, p)}
+                        onOpen={(p) => setOpenPlant({ plant: p, zoneName: z.name })}
                       />
                     </div>
 
