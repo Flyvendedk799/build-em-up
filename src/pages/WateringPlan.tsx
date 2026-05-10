@@ -598,6 +598,11 @@ export default function WateringPlan() {
           />
         )}
 
+        {/* Journal view */}
+        {garden && view === "journal" && (
+          <JournalTab gardenId={garden.id} zones={zones} plantsByZone={plantsByZone} />
+        )}
+
         {/* Seasonal coach view */}
         {garden && zones.length > 0 && view === "coach" && user && (
           <SeasonalCoach userId={user.id} gardenId={garden.id} />
