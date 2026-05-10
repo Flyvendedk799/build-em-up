@@ -270,6 +270,32 @@ export default function PlantDetailSheet({
           </div>
         )}
 
+        {/* Naboer i bedet */}
+        {plant.plant_slug && companion && bedPlants.length > 1 && (() => {
+          const others = Array.from(new Set(bedPlants.map(p => p.plant_slug).filter(Boolean) as string[]));
+          const rels = relationFor(plant.plant_slug!, others, companion);
+          if (rels.length === 0) return null;
+          return (
+            <div className="mt-4 rounded-xl border p-3" style={{ borderColor: "rgba(20,39,29,0.08)" }}>
+              <div className="flex items-center gap-1.5 text-sm font-medium mb-2">
+                <Leaf size={14} /> Naboer i {zoneName}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {rels.map(r => (
+                  <span key={r.slug} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full"
+                    style={{
+                      background: r.rel === "friend" ? "#dcfce7" : r.rel === "foe" ? "#fee2e2" : "rgba(20,39,29,0.05)",
+                      color: r.rel === "friend" ? "#166534" : r.rel === "foe" ? "#991b1b" : "var(--ink-500)",
+                    }}>
+                    {r.rel === "friend" ? <Check size={11} /> : r.rel === "foe" ? <XIcon size={11} /> : null}
+                    {r.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* AI Coach */}
         <div className="mt-5 rounded-xl border p-3" style={{ borderColor: "rgba(20,39,29,0.08)", background: "linear-gradient(135deg,#f7fbf6,#eef5ff)" }}>
           <div className="flex items-center justify-between gap-2">
