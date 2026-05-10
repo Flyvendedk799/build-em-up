@@ -1,114 +1,211 @@
-# Vandingsplan 2.0 — planter, intelligens og kontrol
+# Havelandet → Danmarks #1 haveplatform
 
-I dag kan man oprette bede, men ikke tilføje planter, og siden mangler dybde: ingen planteinventar, ingen vandingshistorik pr. bed, ingen mulighed for at justere AI-anbefalingen, og ingen rigtig "gør det nu"-følelse. Denne plan løfter siden fra et statisk skema til et levende havestyringscenter.
+Set med iværksætterbriller: I dag har I 4 stærke moduler (Webshop, Havemåler, Vanding, Plantepleje AI) der lever som **øer**. De deler ikke data, har ingen fælles "habit loop", og der er ingen monetiseringsmotor ud over ad-hoc webshop-køb. Konkurrenter (Plantix, PictureThis, GroGuru, danske GreenMate) vinder på **én ting**. I kan vinde Danmark ved at være **det eneste sted** hvor måling → plan → pleje → indkøb er ét loop, krydret med dansk-specifikt indhold (DMI-vejr, kommune-affaldskalender, danske sorter, Have-Selskab-style guides).
 
-## 1. Planter i bede (kerne-mangel i dag)
-
-**Plantekort på hvert bed** under header:
-- Chip-række med 🌿 ikon, navn, antal: "Tomat ×3 · Rose ×2 · Salat …"
-- Klik chip → popover med plantebillede, vandbehov, sol-krav, fjern-knap
-- Tom-tilstand: stor "+ Tilføj planter" CTA
-
-**`AddPlantsDialog`** (ny):
-- Søgefelt over `plants_catalog` med live-filter (name_da, latin, kategori)
-- Resultater grupperet efter kategori (Grønt, Blomster, Krydderurter, Træer, Bær)
-- Hver række viser navn, vandbehov-ikon (low/med/high), sol, antal-stepper
-- Kan vælge flere på én gang → "Tilføj 5 planter"
-- Fallback: "+ Tilføj egen plante" med frit navn → gemmes som `custom_name`
-- Smart-forslag: viser top 6 planter der passer til bedet's `sun_exposure` + `soil`
-
-## 2. Bedet som rigtigt produkt
-
-**Udvidet bed-kort:**
-- Plante-thumbnails (4 første som små billeder), resten som "+5"
-- Vandbehov-summering: "Højt vandbehov" hvis flere planter er high → AI får mere vægt
-- Helbredsindikator: rød prik hvis nogen plante har åbne `ai_recommendations`
-
-**Bed-detaljedrawer** (klik på bed-navn):
-- Fuld plante-liste med plantedato, noter
-- Vandingshistorik kun for dette bed (mini-graf, sidste 30 dage)
-- "Skift sol/jord" inline-edit
-- "Dupliker bed" og "Flyt planter til andet bed"
-
-## 3. Manuel "Vand nu" der virker
-
-I dag logger "Vand nu" bare 5 mm. Erstat med:
-- **Quick-vand-dialog**: vælg minutter (5/10/15/20/custom), viser estimerede liter live
-- Vis hvilke planter der vandes
-- Efter vanding: toast med "Næste anbefalede vanding: tirsdag" baseret på fugt
-- Fortrydknap (5 sek) — sletter event hvis tryk på fortryd
-
-## 4. Smartere AI-plan
-
-- **Forklaring**: hvert AI-forslag har "Hvorfor?" knap → viser regnvarsel, plantebehov, jordtype
-- **Lås zoner**: "Behold min nuværende plan for køkkenhaven" checkbox før generering
-- **AI-historik**: gem sidste 3 planer med dato → "Gå tilbage til plan fra 3. maj"
-- **Sammenligning**: før-anvend dialog viser "før → efter" pr. bed (mm/uge, antal vandinger)
-- **Force-refresh** med ny vejrudsigt (knap "Opdater med dagens vejr")
-
-## 5. Opgaver og påmindelser
-
-Brug eksisterende `task_log` tabel til vandingsrelaterede opgaver:
-- Auto-skab opgave når plante tilføjes ("Plant Tomat i Køkkenhaven inden 7 dage")
-- "Tjek fugt manuelt" opgave hvis bed ikke har sensor
-- Hak af direkte fra bed-kortet
-- Notifikations-bell-integration (`notifications` tabel) ved regn-varsel om morgenen
-
-## 6. Vejr-overlay forbedringer
-
-- Klik en dag i 7-dages strip → highlight hvilke bede der vandes/skippes den dag
-- Hover → tooltip med temp/regn/vind-detaljer
-- "Vejr-effekt"-badge på bed: "−12 L sparet i denne uge pga. regn"
-- Time-by-time popover for i dag (regn de næste 24 timer som mini-graf)
-
-## 7. Forbrug og indsigt
-
-**Ny "Indsigt"-fane** (4. tab ved siden af Bede/Kalender/Sæson):
-- Total liter sidste 7/30/365 dage
-- Sparet pga. regn (sammenligning mod fast skema)
-- Top-5 mest vandintensive bede (bar chart)
-- CO₂/kr.-estimat (~5 kr/m³ vand i DK)
-- Eksport CSV af alle vandinger
-
-## 8. Polish og kvalitet-of-life
-
-- **Drag-to-reorder** bede (gem `sort` i metadata-felt eller nyt kolonne)
-- **Bulk-handling**: "Pause alle bede i 3 dage" mens man er på ferie
-- **Profil pr. årstid**: forår/sommer/efterår presets pr. bed (gemt i `garden_zones.microclimate`)
-- **Tastaturgenveje**: `n` = nyt bed, `a` = AI-plan, `w` = vand nu på fokuseret bed
-- **Tom-tilstand på siden**: bedre onboarding-illustration når ingen bede
-- **Mobile**: bed-kort kollapser til accordion, sticky "Vand nu"-FAB
-
-## 9. Performance
-
-- Parallel-load `gardens`, `zones`, `schedules`, `events`, `user_plants` i én Promise.all
-- Cache `plants_catalog` i React Query (sjælden ændring)
-- Virtualiser plantesøgning hvis kataloget vokser
+Nedenfor: hvad der er svagt nu, og hvad der mangler for at blive nr. 1 — prioriteret efter **impact × moat**.
 
 ---
 
-## Tekniske detaljer
+## 1. Diagnose pr. modul — det som ikke fungerer i dag
 
-**Filer der oprettes:**
-- `src/components/watering/AddPlantsDialog.tsx`
-- `src/components/watering/PlantChips.tsx`
-- `src/components/watering/BedDetailDrawer.tsx`
-- `src/components/watering/QuickWaterDialog.tsx`
-- `src/components/watering/InsightsTab.tsx`
-- `src/components/watering/AiPlanHistory.tsx`
+### Webshop
+- Ingen **kontekstuel anbefaling** ("Du har roser i bed 3 → her er gødning til dem")
+- Ingen abonnementer/refill (frø-kasser, gødning hver 3. mdr) — stort tabt LTV
+- Ingen reviews, ingen UGC, ingen "købt sammen med"
+- Ingen **plante-shop** — kun produkter. Et havefirma uden planter er som en boghandel uden bøger
+- Ingen leveringsestimat eller fragtbeskeder
 
-**Filer der ændres:**
-- `src/pages/WateringPlan.tsx` — parallel load, ny tab, plant-state, integrationer
-- `src/components/watering/AiPlanPreview.tsx` — "hvorfor"-forklaringer, sammenligning
-- `src/lib/wateringAI.ts` — udvid `decide()` med plante-vægtning
+### Havemåler
+- Engangsoplevelse — bruges én gang og glemmes
+- Ingen **3D / højde / sol-simulation** (kun 2D polygon) → kan ikke konkurrere med iScape/Garden Planner
+- Ingen "før/efter"-visning eller plantekort på kortet
+- Eksporterer ikke noget (PDF, deling med landskabsarkitekt)
 
-**Database:** Ingen migrations nødvendige — alle nødvendige tabeller findes (`user_plants`, `plants_catalog`, `task_log`, `notifications`, `watering_runs`, `ai_recommendations`).
+### Vandingsplan
+- Nu OK med planter, men: **ingen rigtig hardware-integration** (Gardena, Husqvarna, Rain Bird, Hunter — alle har APIs)
+- "Vand nu" er stadig en log-knap, ikke en faktisk handling
+- Ingen alert-push når brugeren faktisk skal handle (kun in-app)
 
-**Ude af scope (senere):**
-- Rigtig sensor-integration (devices-tabellen er klar, men kræver hardware-flow)
-- Foto-dagbog pr. bed
-- Deling af plan med samboer
+### Plantepleje AI
+- Chat er fin, men **kontekstløs** — kender ikke brugerens have, planter, klimazone, sidste vejr
+- Ingen **proaktiv** rådgivning ("Du har æbletræer → tid til at sprøjte mod skurv nu")
+- Ingen billedhistorik pr. plante (sygdomsudvikling over tid)
+- Ingen integration til webshop ud fra diagnose
+
+### På tværs (det største problem)
+- **Ingen daglig grund til at åbne appen.** Et havefirma skal være årstidsdrevet, ikke task-drevet
+- **Ingen community / social** — ingen deling, ingen sammenligning med naboer
+- **Ingen mobile-first** — alt er desktop-præget, men have-arbejde sker udenfor med en telefon
+- **Ingen onboarding-flow der binder modulerne sammen** (mål have → AI foreslår planter → læg i kurv → få vandingsplan)
 
 ---
 
-Vil du have det hele, eller skal vi starte med fase 1+2+3 (planter, bedkort, vand-nu)?
+## 2. Det manglende rygsøjle-modul: **"Min Have" hub**
+
+Dette er det vigtigste vi mangler. En `/min-have`-side som er **forsiden** efter login, og som binder alt sammen:
+
+```text
+┌─ I dag · 12. maj · 18° / let regn ──────────────┐
+│  3 opgaver venter · Næste vanding kl. 06:30     │
+├─ DAGENS HAVE ───────────────────────────────────┤
+│ ⚠ Tomater i Bed 2 — bladmug-risiko (AI)        │
+│ 💧 Spring vanding over i dag (regn 6mm)         │
+│ 🌱 Tid at så græskar i drivhus (sidste frost)   │
+│ 📦 "Bær-gødning" anbefales → læg i kurv         │
+├─ HAVEN LIGE NU ─────────────────────────────────┤
+│ [Ortofoto med plante-pins]                      │
+│ 124 m² plæne · 18 planter · 4 bede             │
+├─ ÅRSHJUL (sticky) ──────────────────────────────┤
+│ Maj: så, plant ud, beskær syren, gødsk plæne   │
+└─────────────────────────────────────────────────┘
+```
+
+Dette **alene** vil drive 3-5× retention.
+
+---
+
+## 3. Nye moduler / faner som mangler
+
+### A. Plantebibliotek (`/planter`) — **moat-builder**
+- Browse 500+ danske planter med filtre (sol, vand, jord, hårdfør zone, blomstringstid)
+- Hver plante: pleje-kalender, danske sorter, sygdomme, companion planting
+- "Tilføj til min have" → opretter automatisk i bed
+- SEO-guld: hver plante = en side, der rangerer på Google
+
+### B. Årshjul / Have-kalender (`/kalender`)
+- Måned-for-måned hvad der skal gøres baseret på faktiske planter + lokal vejrhistorik
+- Eksport til Google/Apple Calendar
+- Push-notifikationer ("På søndag er det perfekt såvejr")
+- Sammenkobling med opgavelisten
+
+### C. Skadedyrs- og sygdomsopslag (`/diagnose`)
+- Foto-upload → AI-diagnose (allerede eksisterer i Plantepleje AI, men giv det egen indgang + historik)
+- Database over almindelige danske skadedyr (snegle, bladlus, tomatbladmug)
+- Direkte link til behandlingsprodukter i shoppen → **konvertering**
+
+### D. Plæne-modul (`/plaene`)
+- Højdeprofil, klippe-frekvens-anbefaling
+- Robotklipper-status (Husqvarna/Gardena API)
+- Gødnings-kalender (NPK-plan, 4× året)
+- Mos/ukrudt-diagnose via foto
+
+### E. Drivhus & inventar (`/drivhus`)
+- Hvis bruger har drivhus-zone: temperatur-log, sensorer
+- Frø-inventar (hvad har jeg, hvornår udløber det)
+- Sætteplan ("Du sår tomat 10. marts → planter ud 15. maj")
+
+### F. Community / "Have-tråden" (`/feed`)
+- Brugerne deler "før/efter", spørger om diagnose
+- Like, kommentar, følg naboer i samme postnummer
+- **Eksperter** (gartnere, havearkitekter) svarer mod betaling → marketplace
+
+### G. Have-marketplace
+- Lokale gartnere, anlægs-firmaer, robotklipper-service
+- Provision pr. booking → ny indtægtskilde
+- Kun verificerede DK-firmaer
+
+### H. Onboarding-flow (kritisk)
+Et 90-sekunders flow ved første login:
+1. Adresse → vejrzone, jordtype, frost-datoer (DMI)
+2. Mål haven (havemåler — auto)
+3. AI foreslår 5 planter til din zone
+4. Sæt vandingsplan automatisk
+5. Få første opgaveliste
+
+---
+
+## 4. Forretningsmodel — fra ad-hoc til **moat**
+
+### Indtægtskilder vi mangler
+| Kilde | Potentiale | Implementering |
+|---|---|---|
+| **Havelandet+** abonnement (49 kr/md) | Kerne — 30%+ af LTV | AI-features, ubegrænset diagnoser, premium guides, ingen ads |
+| **Frø/plante-abonnement** (sæsonkasse) | Høj retention | Forår/sommer/efterår-kasse leveret |
+| **Refill-abonnement** (gødning, jord) | Recurring | Auto-shipment hver X uger |
+| **Marketplace-provision** (gartnere) | Skalerbar | 10-15% pr. booking |
+| **Affiliate** (planteskoler vi ikke selv leverer) | Lavt arbejde | Partnerskab Plantorama m.fl. |
+| **Hardware-bundles** (sensorer, robotklipper) | Høj AOV | White-label sensor + app-pairing |
+
+### Loyalty
+- "Have-point" pr. opgave hak/køb → rabat
+- Streak-system ("47 dage have-helt") — gamification
+
+---
+
+## 5. Dansk-specifikke moats konkurrenter ikke kan matche
+
+1. **DMI vejr-integration** (10-dages, lokalt postnummer, frost-varsel)
+2. **DAWA + matrikel** (kender din præcise grund — allerede in!)
+3. **Kommune-affaldskalender** (haveaffald-uger, kompost-tilladelser)
+4. **Danske plantesorter** ('Discovery' æbler, 'Ribston' osv.)
+5. **Fredede arter / invasive** (Rynket Rose-advarsel, bjørneklo-rapportering til kommune)
+6. **Hårdførhedszoner DK** (zone 1-4, ikke US-zoner som PictureThis bruger)
+7. **Dansk på dansk** — al AI på dansk, ikke oversat
+8. **Have-Selskabet-style indhold** — månedsguides, partnerskab evt.
+
+---
+
+## 6. UX / platform-niveau forbedringer
+
+- **Mobile-først PWA** — installerbar, offline-kalender, kamera-direct-til-diagnose
+- **Push-notifikationer** (regn-skip, tid at så, ordre afsendt)
+- **Kommandopalette** (⌘K findes — udvid med actions, ikke kun navigation)
+- **Delbare links** ("Se min have" → læselig offentlig side, lead-magnet)
+- **Dark mode** — udendørs i sol
+- **Tilgængelighed** — store touch targets, høj kontrast (mange brugere er 50+)
+- **Onboarding tooltips** (Shepherd.js) første gang hver feature bruges
+- **Konsolideret navigation** — i dag 4 toplinks. Bør være: Min Have · Planter · Webshop · Mere ▾
+
+---
+
+## 7. Vækst-motorer (det glemte)
+
+- **SEO-fundament**: hver plante, hvert skadedyr, hver "hvordan beskærer jeg X" = en landingsside
+- **Email-sekvens**: "Din have i maj" månedlig mail (genåbnings-trigger)
+- **Referral**: "Inviter en have-ven, få 50 kr"
+- **Indhold**: ugentlig blog/video — gartner som ansigt
+- **Partnerskaber**: BoligMagasinet, Have-Selskabet, danske planteskoler
+- **Lokale events**: "Havelandet-dag" hos planteskoler (offline → online)
+
+---
+
+## 8. Anbefalet rækkefølge (12-ugers roadmap)
+
+**Fase 1 — Fundamentet (uge 1-3)**
+1. `/min-have` hub-forside med dagens opgaver
+2. Onboarding-flow der binder modulerne sammen
+3. Notifikationer (push + email)
+4. Mobile/PWA polish
+
+**Fase 2 — Indhold-moat (uge 4-7)**
+5. Plantebibliotek med 200 danske arter (SEO-sider)
+6. Årshjul / kalender-modul
+7. Skadedyrs-database
+8. Hver plante kobler til webshop-produkter (gødning, redskaber)
+
+**Fase 3 — Monetisering (uge 8-10)**
+9. Havelandet+ abonnement (Stripe)
+10. Frø-kasse abonnement
+11. Wishlist → auto-genbestilling
+
+**Fase 4 — Moat (uge 11-12+)**
+12. Community feed
+13. Marketplace-MVP (3-5 gartnere)
+14. Hardware-integrationer (Gardena først)
+
+---
+
+## 9. Hvad jeg foreslår vi gør **i næste loop**
+
+Ikke alt på én gang. Vælg én af disse som første konkrete sprint:
+
+**A. "Min Have" hub-forside** — højeste retention-impact, 3-4 dages arbejde
+**B. Plantebibliotek + SEO** — højeste vækst-impact, 1 uges arbejde
+**C. Onboarding-flow** — højeste konvertering-impact, 2 dage
+**D. Havelandet+ abonnement** — højeste revenue-impact, 3 dage
+
+Min anbefaling som iværksætter: **A først** (forsiden er der brugeren lander efter login — uden den er resten ligegyldigt), derefter **C** (få nye brugere helt igennem), så **B** (vækstmotor), så **D** (når retention er bevist).
+
+---
+
+Hvilken vil du have vi tager først? Eller skal vi køre A+C i samme sprint?
