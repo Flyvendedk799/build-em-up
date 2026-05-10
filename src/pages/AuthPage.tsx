@@ -15,7 +15,7 @@ export default function AuthPage({ initialMode }: { initialMode: Mode }) {
   const [busy, setBusy] = useState(false);
   const nav = useNavigate();
   const [params] = useSearchParams();
-  const next = params.get("next") || "/konto";
+  const next = params.get("next") || "/min-have";
 
   async function googleSignIn() {
     setBusy(true);
