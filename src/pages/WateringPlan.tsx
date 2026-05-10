@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf } from "lucide-react";
+import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf, BarChart3 } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -25,6 +25,10 @@ import DepletionChart from "@/components/watering/DepletionChart";
 import CalendarTimeline from "@/components/watering/CalendarTimeline";
 import SeasonalCoach from "@/components/watering/SeasonalCoach";
 import SmartInsights from "@/components/watering/SmartInsights";
+import PlantChips, { ZonePlant } from "@/components/watering/PlantChips";
+import AddPlantsDialog from "@/components/watering/AddPlantsDialog";
+import QuickWaterDialog from "@/components/watering/QuickWaterDialog";
+import InsightsTab from "@/components/watering/InsightsTab";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -62,6 +66,11 @@ export default function WateringPlan() {
   const [aiPlan, setAiPlan] = useState<AiPlan | null>(null);
   const [newZoneId, setNewZoneId] = useState<string | null>(null);
 
+  // plants
+  const [plantsByZone, setPlantsByZone] = useState<Record<string, ZonePlant[]>>({});
+  const [addPlantsZone, setAddPlantsZone] = useState<ZoneRow | null>(null);
+  const [quickWaterZone, setQuickWaterZone] = useState<ZoneRow | null>(null);
+
   // pause + snooze + alert state (persisted to localStorage)
   const [pauseUntil, setPauseUntilState] = useState<Date | null>(() => {
     const v = localStorage.getItem("watering.pauseUntil");
@@ -74,8 +83,8 @@ export default function WateringPlan() {
     } catch { return new Set(); }
   });
   const [rainDismissedAt, setRainDismissedAt] = useState<string | null>(() => localStorage.getItem("watering.rainDismissed"));
-  const [view, setView] = useState<"cards" | "calendar" | "coach">(() => (localStorage.getItem("watering.view") as any) || "cards");
-  function setViewPersist(v: "cards" | "calendar" | "coach") {
+  const [view, setView] = useState<"cards" | "calendar" | "coach" | "insights">(() => (localStorage.getItem("watering.view") as any) || "cards");
+  function setViewPersist(v: "cards" | "calendar" | "coach" | "insights") {
     setView(v); localStorage.setItem("watering.view", v);
   }
   function snoozeOn(scheduleId: string, dateISO: string) {
@@ -121,17 +130,33 @@ export default function WateringPlan() {
       if (g && !activeGardenId) setActive(g.id);
 
       if (g) {
-        const { data: zs } = await supabase.from("garden_zones")
-          .select("id,garden_id,name,type,area_m2,sun_exposure,soil").eq("garden_id", g.id);
+        const [{ data: zs }, { data: ss }, { data: es }, { data: pl }] = await Promise.all([
+          supabase.from("garden_zones")
+            .select("id,garden_id,name,type,area_m2,sun_exposure,soil").eq("garden_id", g.id),
+          supabase.from("watering_schedules").select("*").eq("user_id", user.id),
+          supabase.from("watering_events").select("*")
+            .eq("user_id", user.id).order("scheduled_for", { ascending: false }).limit(500),
+          supabase.from("user_plants")
+            .select("id,zone_id,plant_slug,custom_name,qty,plants_catalog(name_da,water_need,image_url)")
+            .eq("garden_id", g.id),
+        ]);
         setZones((zs ?? []) as ZoneRow[]);
-      } else setZones([]);
-
-      const { data: ss } = await supabase.from("watering_schedules").select("*").eq("user_id", user.id);
-      setSchedules(ss ?? []);
-
-      const { data: es } = await supabase.from("watering_events").select("*")
-        .eq("user_id", user.id).order("scheduled_for", { ascending: false }).limit(20);
-      setEvents((es ?? []) as EventRow[]);
+        setSchedules(ss ?? []);
+        setEvents((es ?? []) as EventRow[]);
+        const map: Record<string, ZonePlant[]> = {};
+        (pl ?? []).forEach((p: any) => {
+          if (!p.zone_id) return;
+          (map[p.zone_id] ||= []).push({
+            id: p.id, zone_id: p.zone_id, plant_slug: p.plant_slug,
+            custom_name: p.custom_name, qty: p.qty,
+            name_da: p.plants_catalog?.name_da, water_need: p.plants_catalog?.water_need,
+            image_url: p.plants_catalog?.image_url,
+          });
+        });
+        setPlantsByZone(map);
+      } else {
+        setZones([]); setSchedules([]); setEvents([]); setPlantsByZone({});
+      }
       setLoading(false);
     })();
   }, [user, activeGardenId]);
@@ -217,17 +242,67 @@ export default function WateringPlan() {
     setSchedules(prev => prev.filter(s => s.id !== id));
     await supabase.from("watering_schedules").delete().eq("id", id);
   }
-  async function waterNow(zone: ZoneRow) {
+  async function waterNow(zone: ZoneRow, minutes = 15) {
     if (!user) return;
-    const liters = litersForSession(zone, 15);
+    const liters = litersForSession(zone, minutes);
+    const mm = Math.round((minutes / 15) * 5);
     const { data, error } = await supabase.from("watering_events").insert({
       user_id: user.id, zone_id: zone.id, schedule_id: null,
       scheduled_for: new Date().toISOString(), ran_at: new Date().toISOString(),
-      weather_skipped: false, reason: "Manuel", mm_delivered: 5,
+      weather_skipped: false, reason: `Manuel · ${minutes} min`, mm_delivered: mm,
     }).select().single();
     if (error || !data) { toast.error(error?.message ?? "Fejl"); return; }
     setEvents(prev => [data as EventRow, ...prev]);
-    toast.success(`Vander ${zone.name} · ~${liters} L`);
+    const eventId = (data as EventRow).id;
+    toast.success(`Vander ${zone.name} · ~${liters} L`, {
+      action: {
+        label: "Fortryd",
+        onClick: async () => {
+          await supabase.from("watering_events").delete().eq("id", eventId);
+          setEvents(prev => prev.filter(e => e.id !== eventId));
+          toast.success("Fortrudt");
+        },
+      },
+    });
+  }
+
+  // ----- Plants CRUD -----
+  async function addPlants(zone: ZoneRow, items: { slug?: string; custom_name?: string; qty: number; meta?: any }[]) {
+    if (!user || !garden) return;
+    const rows = items.map(i => ({
+      user_id: user.id, garden_id: garden.id, zone_id: zone.id,
+      plant_slug: i.slug ?? null, custom_name: i.custom_name ?? null, qty: i.qty,
+    }));
+    const { data, error } = await supabase.from("user_plants").insert(rows).select();
+    if (error) { toast.error(error.message); return; }
+    const newOnes: ZonePlant[] = (data ?? []).map((p: any) => {
+      const meta = items.find(i => i.slug === p.plant_slug)?.meta;
+      return {
+        id: p.id, zone_id: p.zone_id, plant_slug: p.plant_slug,
+        custom_name: p.custom_name, qty: p.qty,
+        name_da: meta?.name_da, water_need: meta?.water_need, image_url: meta?.image_url,
+      };
+    });
+    setPlantsByZone(prev => ({ ...prev, [zone.id]: [...(prev[zone.id] ?? []), ...newOnes] }));
+  }
+
+  async function removePlant(zoneId: string, p: ZonePlant) {
+    setPlantsByZone(prev => ({ ...prev, [zoneId]: (prev[zoneId] ?? []).filter(x => x.id !== p.id) }));
+    const { error } = await supabase.from("user_plants").delete().eq("id", p.id);
+    if (error) toast.error(error.message);
+    else toast.success("Plante fjernet", {
+      action: {
+        label: "Fortryd",
+        onClick: async () => {
+          if (!user || !garden) return;
+          const { data } = await supabase.from("user_plants").insert({
+            user_id: user.id, garden_id: garden.id, zone_id: zoneId,
+            plant_slug: p.plant_slug, custom_name: p.custom_name, qty: p.qty,
+          }).select().single();
+          if (data) setPlantsByZone(prev => ({ ...prev, [zoneId]: [...(prev[zoneId] ?? []), { ...p, id: (data as any).id }] }));
+        },
+      },
+    });
   }
 
   // ----- AI Plan -----
@@ -452,6 +527,7 @@ export default function WateringPlan() {
               { k: "cards", label: "Bede", icon: LayoutGrid },
               { k: "calendar", label: "Kalender", icon: CalendarDays },
               { k: "coach", label: "Sæson", icon: Leaf },
+              { k: "insights", label: "Indsigt", icon: BarChart3 },
             ] as const).map(({ k, label, icon: Icon }) => (
               <button key={k} onClick={() => setViewPersist(k)}
                 style={{
@@ -476,6 +552,10 @@ export default function WateringPlan() {
         {/* Seasonal coach view */}
         {garden && zones.length > 0 && view === "coach" && user && (
           <SeasonalCoach userId={user.id} gardenId={garden.id} />
+        )}
+
+        {garden && zones.length > 0 && view === "insights" && (
+          <InsightsTab events={events} zones={zones} />
         )}
 
         {/* Zone cards (default) */}
@@ -503,7 +583,7 @@ export default function WateringPlan() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <Button size="sm" variant="ghost" onClick={() => waterNow(z)}><Droplets size={14} className="mr-1" />Vand nu</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setQuickWaterZone(z)}><Droplets size={14} className="mr-1" />Vand nu</Button>
                         <Button size="sm" variant="ghost" onClick={() => addSchedule(z.id)}><Plus size={14} className="mr-1" />Timer</Button>
                         <Button size="sm" variant="ghost" onClick={() => { setEditing({ id: z.id, name: z.name, type: z.type, area_m2: Number(z.area_m2 ?? 10), sun_exposure: z.sun_exposure ?? "sun", soil: z.soil ?? "loam" }); setBedOpen(true); }}>
                           <Pencil size={14} />
@@ -512,6 +592,14 @@ export default function WateringPlan() {
                           <Trash2 size={14} />
                         </Button>
                       </div>
+                    </div>
+
+                    <div style={{ marginBottom: 14 }}>
+                      <PlantChips
+                        plants={plantsByZone[z.id] ?? []}
+                        onAdd={() => setAddPlantsZone(z)}
+                        onRemove={(p) => removePlant(z.id, p)}
+                      />
                     </div>
 
                     {forecasts.length > 0 && (
@@ -597,6 +685,22 @@ export default function WateringPlan() {
       </AlertDialog>
 
       <AiPlanPreview open={aiOpen} onOpenChange={setAiOpen} plan={aiPlan} loading={aiLoading} zoneNames={zoneNames} onApply={applyAiPlan} />
+
+      <AddPlantsDialog
+        open={!!addPlantsZone}
+        onOpenChange={(v) => !v && setAddPlantsZone(null)}
+        zoneName={addPlantsZone?.name ?? ""}
+        zoneSun={addPlantsZone?.sun_exposure}
+        onAdd={async (items) => { if (addPlantsZone) await addPlants(addPlantsZone, items); }}
+      />
+
+      <QuickWaterDialog
+        open={!!quickWaterZone}
+        onOpenChange={(v) => !v && setQuickWaterZone(null)}
+        zone={quickWaterZone}
+        plantNames={(quickWaterZone ? plantsByZone[quickWaterZone.id] ?? [] : []).map(p => p.custom_name || p.name_da || p.plant_slug || "plante")}
+        onConfirm={async (min) => { if (quickWaterZone) await waterNow(quickWaterZone, min); }}
+      />
 
       <SiteFooter />
     </>

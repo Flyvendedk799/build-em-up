@@ -1,166 +1,114 @@
+# Vandingsplan 2.0 — planter, intelligens og kontrol
 
-# Vision
+I dag kan man oprette bede, men ikke tilføje planter, og siden mangler dybde: ingen planteinventar, ingen vandingshistorik pr. bed, ingen mulighed for at justere AI-anbefalingen, og ingen rigtig "gør det nu"-følelse. Denne plan løfter siden fra et statisk skema til et levende havestyringscenter.
 
-Turn Vandingsplan and Plantepleje AI into a single, intelligent "Garden Brain" that knows the user's garden, weather, plants, devices and shopping — proactively saving water, time and plants. Cross-integrated with Havemåler, Webshop, Account and Notifications.
+## 1. Planter i bede (kerne-mangel i dag)
 
-The 36 phases are grouped into 9 sequences. Each phase is independently shippable.
+**Plantekort på hvert bed** under header:
+- Chip-række med 🌿 ikon, navn, antal: "Tomat ×3 · Rose ×2 · Salat …"
+- Klik chip → popover med plantebillede, vandbehov, sol-krav, fjern-knap
+- Tom-tilstand: stor "+ Tilføj planter" CTA
 
----
+**`AddPlantsDialog`** (ny):
+- Søgefelt over `plants_catalog` med live-filter (name_da, latin, kategori)
+- Resultater grupperet efter kategori (Grønt, Blomster, Krydderurter, Træer, Bær)
+- Hver række viser navn, vandbehov-ikon (low/med/high), sol, antal-stepper
+- Kan vælge flere på én gang → "Tilføj 5 planter"
+- Fallback: "+ Tilføj egen plante" med frit navn → gemmes som `custom_name`
+- Smart-forslag: viser top 6 planter der passer til bedet's `sun_exposure` + `soil`
 
-## Sequence A — Foundations & Data Model (Phase 1–4)
+## 2. Bedet som rigtigt produkt
 
-**Phase 1 — Unified "Garden Brain" data layer**
-New tables: `zone_plantings` (link plants → zones with density/age), `weather_cache` (daily ET0/precip/temp per lat,lon), `watering_runs` (actual mm + liters delivered), `ai_recommendations` (typed recs across modules), `task_log` (any garden action). Indexes + RLS.
+**Udvidet bed-kort:**
+- Plante-thumbnails (4 første som små billeder), resten som "+5"
+- Vandbehov-summering: "Højt vandbehov" hvis flere planter er high → AI får mere vægt
+- Helbredsindikator: rød prik hvis nogen plante har åbne `ai_recommendations`
 
-**Phase 2 — Weather service v2**
-Edge function `weather-sync` pulls 14-day Open-Meteo + DMI radar nowcast; caches per garden; exposes `getForecast(gardenId)` everywhere (Vanding, Plantepleje, Have-måler).
+**Bed-detaljedrawer** (klik på bed-navn):
+- Fuld plante-liste med plantedato, noter
+- Vandingshistorik kun for dette bed (mini-graf, sidste 30 dage)
+- "Skift sol/jord" inline-edit
+- "Dupliker bed" og "Flyt planter til andet bed"
 
-**Phase 3 — Plant intelligence catalog**
-Extend `plants_catalog` with `kc` (crop coefficient), `root_depth_cm`, `frost_risk`, `disease_risks[]`, `companion_plants[]`, `month_tasks` (sow/prune/fertilize/harvest/winterize). Seed via AI batch.
+## 3. Manuel "Vand nu" der virker
 
-**Phase 4 — Soil & microclimate model**
-Per zone: soil type, slope, mulch, shade %, wind exposure. Used for ET0 multiplier and runoff risk. UI in bed editor.
+I dag logger "Vand nu" bare 5 mm. Erstat med:
+- **Quick-vand-dialog**: vælg minutter (5/10/15/20/custom), viser estimerede liter live
+- Vis hvilke planter der vandes
+- Efter vanding: toast med "Næste anbefalede vanding: tirsdag" baseret på fugt
+- Fortrydknap (5 sek) — sletter event hvis tryk på fortryd
 
----
+## 4. Smartere AI-plan
 
-## Sequence B — Watering Intelligence Core (Phase 5–9)
+- **Forklaring**: hvert AI-forslag har "Hvorfor?" knap → viser regnvarsel, plantebehov, jordtype
+- **Lås zoner**: "Behold min nuværende plan for køkkenhaven" checkbox før generering
+- **AI-historik**: gem sidste 3 planer med dato → "Gå tilbage til plan fra 3. maj"
+- **Sammenligning**: før-anvend dialog viser "før → efter" pr. bed (mm/uge, antal vandinger)
+- **Force-refresh** med ny vejrudsigt (knap "Opdater med dagens vejr")
 
-**Phase 5 — Soil-water balance engine**
-Replace ad-hoc deficit with proper FAO-56 daily balance: `θ(t+1) = θ(t) + rain + irrigation − ETc − runoff`. Per-zone state persisted; drives all decisions.
+## 5. Opgaver og påmindelser
 
-**Phase 6 — Smart schedule generation v2**
-AI generates *adaptive* schedules: not just times, but rules ("water when deficit > 60% AND no rain >5mm in next 36h"). Stored as JSON conditions on `watering_schedules.rule`.
+Brug eksisterende `task_log` tabel til vandingsrelaterede opgaver:
+- Auto-skab opgave når plante tilføjes ("Plant Tomat i Køkkenhaven inden 7 dage")
+- "Tjek fugt manuelt" opgave hvis bed ikke har sensor
+- Hak af direkte fra bed-kortet
+- Notifikations-bell-integration (`notifications` tabel) ved regn-varsel om morgenen
 
-**Phase 7 — Hyperlocal rain skip + rain-harvest**
-Use radar nowcast (next 2h) for last-mile skip. Track "saved liters" + cumulative € saved (vandafgift DK ~70 kr/m³). Hero counter.
+## 6. Vejr-overlay forbedringer
 
-**Phase 8 — Frost & heatwave guard**
-Auto-shift schedules: pre-water before heatwaves, suspend before frost, pre-soak before drought weekends.
+- Klik en dag i 7-dages strip → highlight hvilke bede der vandes/skippes den dag
+- Hover → tooltip med temp/regn/vind-detaljer
+- "Vejr-effekt"-badge på bed: "−12 L sparet i denne uge pga. regn"
+- Time-by-time popover for i dag (regn de næste 24 timer som mini-graf)
 
-**Phase 9 — Manual override & feedback loop**
-"Jeg vandede selv" / "Det var for meget/lidt" buttons. Feeds back into per-zone learned multiplier (simple bayesian update).
+## 7. Forbrug og indsigt
 
----
+**Ny "Indsigt"-fane** (4. tab ved siden af Bede/Kalender/Sæson):
+- Total liter sidste 7/30/365 dage
+- Sparet pga. regn (sammenligning mod fast skema)
+- Top-5 mest vandintensive bede (bar chart)
+- CO₂/kr.-estimat (~5 kr/m³ vand i DK)
+- Eksport CSV af alle vandinger
 
-## Sequence C — UX & Animation Polish (Phase 10–14)
+## 8. Polish og kvalitet-of-life
 
-**Phase 10 — Hero "Today" cinema**
-Full-bleed hero: animated water droplet ring counting today's planned liters, weather glyph morph (sun → cloud → rain), live "next run in 02:14:33". Framer-motion + canvas.
+- **Drag-to-reorder** bede (gem `sort` i metadata-felt eller nyt kolonne)
+- **Bulk-handling**: "Pause alle bede i 3 dage" mens man er på ferie
+- **Profil pr. årstid**: forår/sommer/efterår presets pr. bed (gemt i `garden_zones.microclimate`)
+- **Tastaturgenveje**: `n` = nyt bed, `a` = AI-plan, `w` = vand nu på fokuseret bed
+- **Tom-tilstand på siden**: bedre onboarding-illustration når ingen bede
+- **Mobile**: bed-kort kollapser til accordion, sticky "Vand nu"-FAB
 
-**Phase 11 — Zone cards 2.0**
-Each bed becomes a card with: live moisture gauge (animated), micro-forecast strip, last/next watering, plants thumbnails, quick "vand nu / spring over / 5 min ekstra".
+## 9. Performance
 
-**Phase 12 — Timeline & Calendar view**
-Toggle list/timeline/calendar. Drag-to-reschedule. Week heatmap of mm delivered vs ET0.
-
-**Phase 13 — Mobile-first redesign + haptics**
-Bottom sheet controls, swipe-to-snooze, pull-to-refresh forecast, install-as-PWA prompt.
-
-**Phase 14 — Empty/loading/error states**
-Skeletons, illustrated empty states ("Tilføj dit første bed"), retry flows. Consistent across modules.
-
----
-
-## Sequence D — Plantepleje AI elevation (Phase 15–20)
-
-**Phase 15 — Context-aware chat**
-Inject active garden, zones, plants, recent weather, last watering events into system prompt. Chat knows "din tomatzone fik 8mm i går".
-
-**Phase 16 — Photo diagnosis pipeline**
-Upload plant photo → Gemini multimodal → structured diagnosis (disease, severity, treatment, products). Save to `plant_health_log`.
-
-**Phase 17 — Tool-calling agent**
-Plantepleje AI can: create watering schedule, add plant to zone, add task, add product to cart, book reminder. All as function tools in edge function.
-
-**Phase 18 — Seasonal coach**
-Weekly AI digest per garden: "Denne uge i din have" — sow, prune, watch for X disease, harvest Y. Push notification + email.
-
-**Phase 19 — Plant journal**
-Per-plant timeline (planted, watered, fertilized, harvested, photos). AI auto-generates entries from events. Shareable card.
-
-**Phase 20 — Voice mode**
-Speech-to-text input + TTS reply for hands-in-dirt usage. Web Speech API fallback, Lovable AI for transcribe.
-
----
-
-## Sequence E — Cross-Platform Integration (Phase 21–25)
-
-**Phase 21 — Havemåler ↔ Vanding bridge**
-Polygons drawn in Havemåler auto-create zones with area, sun (from satellite shadow analysis), suggested plants. One-click "Lav vandingsplan af min have".
-
-**Phase 22 — Webshop recommendations engine**
-Based on zones/plants/diagnoses → recommended products (seeds, mulch, dryppeslange, sensorer). Card on Vanding + Plantepleje pages. Tracked attribution.
-
-**Phase 23 — Device integration framework**
-`devices` table already exists. Add adapters for: Gardena smart, generic MQTT, manual valve. UI to bind schedule → device. Status pings.
-
-**Phase 24 — Bundle "Smart Garden Kit"**
-Pre-configured PDP that provisions: sensors + valves + initial schedule. One purchase = working setup.
-
-**Phase 25 — Notifications hub**
-Unified `notifications` feed: rain-skip, frost warning, harvest-ready, low battery, order shipped. Channels: in-app, email, push, WhatsApp (later).
+- Parallel-load `gardens`, `zones`, `schedules`, `events`, `user_plants` i én Promise.all
+- Cache `plants_catalog` i React Query (sjælden ændring)
+- Virtualiser plantesøgning hvis kataloget vokser
 
 ---
 
-## Sequence F — Intelligence Layer (Phase 26–29)
+## Tekniske detaljer
 
-**Phase 26 — AI plan explainability**
-Every decision has a "why" trace: forecast, soil, plant Kc, history. Inspector drawer.
+**Filer der oprettes:**
+- `src/components/watering/AddPlantsDialog.tsx`
+- `src/components/watering/PlantChips.tsx`
+- `src/components/watering/BedDetailDrawer.tsx`
+- `src/components/watering/QuickWaterDialog.tsx`
+- `src/components/watering/InsightsTab.tsx`
+- `src/components/watering/AiPlanHistory.tsx`
 
-**Phase 27 — What-if simulator**
-Slider: "hvad hvis det regner 0/5/15mm" → preview week's adjusted plan. Educational.
+**Filer der ændres:**
+- `src/pages/WateringPlan.tsx` — parallel load, ny tab, plant-state, integrationer
+- `src/components/watering/AiPlanPreview.tsx` — "hvorfor"-forklaringer, sammenligning
+- `src/lib/wateringAI.ts` — udvid `decide()` med plante-vægtning
 
-**Phase 28 — Anomaly detection**
-Detect: zone consistently overwatered, sensor drift, schedule never run. Surface as recommendations.
+**Database:** Ingen migrations nødvendige — alle nødvendige tabeller findes (`user_plants`, `plants_catalog`, `task_log`, `notifications`, `watering_runs`, `ai_recommendations`).
 
-**Phase 29 — Yield & savings dashboard**
-Liters used vs baseline, kr saved, CO₂ saved, harvest logged. Yearly wrap-up shareable card ("Din havesæson 2026").
-
----
-
-## Sequence G — Community & Content (Phase 30–32)
-
-**Phase 30 — Local benchmarks**
-"Haver i dit postnummer brugte 12% mindre vand denne uge". Anonymized aggregates.
-
-**Phase 31 — Templates marketplace**
-Share/import zone+schedule+plant templates ("Køkkenhave 10m²", "Staudebed nord"). Curated + community.
-
-**Phase 32 — Expert content hub**
-SEO-grade Danish articles per plant + season, JSON-LD, deep-linked from chat answers. Drives organic traffic.
+**Ude af scope (senere):**
+- Rigtig sensor-integration (devices-tabellen er klar, men kræver hardware-flow)
+- Foto-dagbog pr. bed
+- Deling af plan med samboer
 
 ---
 
-## Sequence H — Trust, Performance, Accessibility (Phase 33–34)
-
-**Phase 33 — Performance & offline**
-Route-level code split, prefetch on hover, IndexedDB cache of plan + forecast for offline view, Lighthouse ≥95.
-
-**Phase 34 — A11y + i18n scaffold**
-WCAG AA: focus rings, ARIA on gauges, prefers-reduced-motion. i18n keys (da default, en next).
-
----
-
-## Sequence I — Growth & Moats (Phase 35–36)
-
-**Phase 35 — Onboarding rebuilt**
-3-min flow: address → satellite polygon → AI suggests zones+plants → first schedule → install PWA. Conversion-optimized.
-
-**Phase 36 — Referral + Pro tier**
-Free: 1 garden, basic AI. Pro: unlimited gardens, device control, weekly digest, photo diagnosis, voice. Referral = 1 month Pro.
-
----
-
-## Technical Notes
-
-- **AI**: Lovable AI Gateway only. Default `google/gemini-3-flash-preview`; use `gemini-2.5-pro` for plan generation, `gemini-2.5-flash-image` for diagnosis.
-- **Edge functions to add**: `weather-sync`, `garden-brain` (tool-calling agent), `plant-diagnose`, `weekly-digest`, `device-bridge`, `recommendations`.
-- **DB migrations**: all additive, RLS by `user_id`, audit triggers reused.
-- **Design**: keep watering.css tokens; add new motion tokens; honor prefers-reduced-motion.
-- **No breaking changes**: existing schedules/zones forward-compatible.
-
-## Suggested first sprint
-
-If you want to ship momentum: **Phase 1 + 2 + 5 + 10 + 15 + 21**. That's the foundation, the visible polish, the smarter chat, and the killer Havemåler bridge — in one go.
-
-Tell me which phases to start with, or say "go from phase 1" and I'll execute in sequence with checkpoints.
+Vil du have det hele, eller skal vi starte med fase 1+2+3 (planter, bedkort, vand-nu)?
