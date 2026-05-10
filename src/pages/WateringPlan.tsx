@@ -84,7 +84,8 @@ export default function WateringPlan() {
   const [quickWaterZone, setQuickWaterZone] = useState<ZoneRow | null>(null);
   const [openPlant, setOpenPlant] = useState<{ plant: ZonePlant; zoneName: string; zoneId: string } | null>(null);
   const [identifyOpen, setIdentifyOpen] = useState(false);
-
+  const [scanZone, setScanZone] = useState<ZoneRow | null>(null);
+  const [chatZone, setChatZone] = useState<ZoneRow | null>(null);
   // pause + snooze + alert state (persisted to localStorage)
   const [pauseUntil, setPauseUntilState] = useState<Date | null>(() => {
     const v = localStorage.getItem("watering.pauseUntil");
