@@ -151,7 +151,7 @@ export default function NeighborsTab() {
   async function onPickImage(file: File, setter: (v: string | null) => void) {
     setUploading(true);
     try {
-      const url = await uploadPlantPhoto(file, user!.id);
+      const url = await uploadPlantPhoto(user!.id, file);
       setter(url);
     } catch { toast.error("Upload fejlede"); }
     setUploading(false);
