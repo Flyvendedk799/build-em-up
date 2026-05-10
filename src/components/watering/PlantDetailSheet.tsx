@@ -24,6 +24,7 @@ type CatalogDetail = {
   sow_months: number[] | null;
   harvest_months: number[] | null;
   companion_plants: string[] | null;
+  antagonist_plants: string[] | null;
   frost_risk: string | null;
   image_url: string | null;
 };
