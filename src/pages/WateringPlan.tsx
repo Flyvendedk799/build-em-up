@@ -470,6 +470,9 @@ export default function WateringPlan() {
           </div>
         )}
 
+        {/* Daily AI briefing */}
+        {garden && user && <MorningBriefing userId={user.id} />}
+
         {/* Today hero (cinema) */}
         {garden && (() => {
           const todayKey = new Date().toISOString().slice(0, 10);
