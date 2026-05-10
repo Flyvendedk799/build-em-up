@@ -32,6 +32,7 @@ import InsightsTab from "@/components/watering/InsightsTab";
 import PlantsTab from "@/components/watering/PlantsTab";
 import PlantDetailSheet from "@/components/watering/PlantDetailSheet";
 import IdentifyPlantDialog from "@/components/watering/IdentifyPlantDialog";
+import JournalTab, { logJournal } from "@/components/watering/JournalTab";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
