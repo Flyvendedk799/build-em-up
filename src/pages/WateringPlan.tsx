@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf } from "lucide-react";
+import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf, BarChart3 } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -25,6 +25,10 @@ import DepletionChart from "@/components/watering/DepletionChart";
 import CalendarTimeline from "@/components/watering/CalendarTimeline";
 import SeasonalCoach from "@/components/watering/SeasonalCoach";
 import SmartInsights from "@/components/watering/SmartInsights";
+import PlantChips, { ZonePlant } from "@/components/watering/PlantChips";
+import AddPlantsDialog from "@/components/watering/AddPlantsDialog";
+import QuickWaterDialog from "@/components/watering/QuickWaterDialog";
+import InsightsTab from "@/components/watering/InsightsTab";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
