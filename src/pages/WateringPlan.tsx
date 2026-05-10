@@ -583,6 +583,16 @@ export default function WateringPlan() {
           <CalendarTimeline schedules={schedules} zones={zones} forecasts={forecasts} opts={decideOpts} onSnooze={snoozeOn} />
         )}
 
+        {/* Plants view */}
+        {garden && zones.length > 0 && view === "plants" && (
+          <PlantsTab
+            zones={zones}
+            plantsByZone={plantsByZone}
+            onOpenPlant={(p, zoneName) => setOpenPlant({ plant: p, zoneName })}
+            onAddToZone={(z) => setAddPlantsZone(z as ZoneRow)}
+          />
+        )}
+
         {/* Seasonal coach view */}
         {garden && zones.length > 0 && view === "coach" && user && (
           <SeasonalCoach userId={user.id} gardenId={garden.id} />
