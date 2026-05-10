@@ -594,6 +594,14 @@ export default function WateringPlan() {
                       </div>
                     </div>
 
+                    <div style={{ marginBottom: 14 }}>
+                      <PlantChips
+                        plants={plantsByZone[z.id] ?? []}
+                        onAdd={() => setAddPlantsZone(z)}
+                        onRemove={(p) => removePlant(z.id, p)}
+                      />
+                    </div>
+
                     {forecasts.length > 0 && (
                       <div style={{ marginBottom: 14, display: "grid", gap: 12 }}>
                         <MoistureGauge deficit={moistureDeficit(z, forecasts)} />
