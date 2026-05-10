@@ -635,6 +635,9 @@ export default function WateringPlan() {
           <JournalTab gardenId={garden.id} zones={zones} plantsByZone={plantsByZone} />
         )}
 
+        {/* Neighbors view */}
+        {view === "neighbors" && <NeighborsTab />}
+
         {/* Seasonal coach view */}
         {garden && zones.length > 0 && view === "coach" && user && (
           <SeasonalCoach userId={user.id} gardenId={garden.id} />
