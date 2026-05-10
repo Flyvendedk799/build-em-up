@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf, BarChart3, Sprout, NotebookPen } from "lucide-react";
+import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf, BarChart3, Sprout, NotebookPen, CalendarRange } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -33,6 +33,9 @@ import PlantsTab from "@/components/watering/PlantsTab";
 import PlantDetailSheet from "@/components/watering/PlantDetailSheet";
 import IdentifyPlantDialog from "@/components/watering/IdentifyPlantDialog";
 import JournalTab, { logJournal } from "@/components/watering/JournalTab";
+import MorningBriefing from "@/components/watering/MorningBriefing";
+import CalendarTab from "@/components/watering/CalendarTab";
+import GardenChatBubble from "@/components/watering/GardenChatBubble";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -89,8 +92,10 @@ export default function WateringPlan() {
     } catch { return new Set(); }
   });
   const [rainDismissedAt, setRainDismissedAt] = useState<string | null>(() => localStorage.getItem("watering.rainDismissed"));
-  const [view, setView] = useState<"cards" | "plants" | "journal" | "calendar" | "coach" | "insights">(() => (localStorage.getItem("watering.view") as any) || "cards");
-  function setViewPersist(v: "cards" | "plants" | "journal" | "calendar" | "coach" | "insights") {
+  type View = "cards" | "plants" | "journal" | "calendar" | "yearwheel" | "coach" | "insights";
+  const [view, setView] = useState<View>(() => (localStorage.getItem("watering.view") as View) || "cards");
+  const [catalogBySlug, setCatalogBySlug] = useState<Record<string, any>>({});
+  function setViewPersist(v: View) {
     setView(v); localStorage.setItem("watering.view", v);
   }
   function snoozeOn(scheduleId: string, dateISO: string) {
