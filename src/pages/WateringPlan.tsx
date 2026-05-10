@@ -586,34 +586,63 @@ export default function WateringPlan() {
           <SmartInsights schedules={schedules} zones={zones} forecasts={forecasts} opts={decideOpts} />
         )}
 
-        {/* View tabs */}
-        {garden && zones.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 18, padding: 4, background: "var(--ink-50)", borderRadius: 100, width: "fit-content" }}>
-            {([
-              { k: "cards", label: "Bede", icon: LayoutGrid },
-              { k: "plants", label: "Planter", icon: Sprout },
-              { k: "journal", label: "Journal", icon: NotebookPen },
-              { k: "calendar", label: "Vandinger", icon: CalendarDays },
-              { k: "yearwheel", label: "Årshjul", icon: CalendarRange },
-              { k: "neighbors", label: "Naboer", icon: Users },
-              { k: "iot", label: "Smart", icon: Radio },
-              { k: "coach", label: "Sæson", icon: Leaf },
-              { k: "insights", label: "Indsigt", icon: BarChart3 },
-            ] as const).map(({ k, label, icon: Icon }) => (
-              <button key={k} onClick={() => setViewPersist(k)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "8px 14px", borderRadius: 100, border: "none",
-                  background: view === k ? "var(--paper)" : "transparent",
-                  boxShadow: view === k ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-                  color: view === k ? "var(--ink-900)" : "var(--ink-500)",
-                  fontSize: 13, fontWeight: 500, cursor: "pointer",
-                }}>
-                <Icon size={14} /> {label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* View tabs — 3 primary + dropdown */}
+        {garden && zones.length > 0 && (() => {
+          const primary = [
+            { k: "cards" as View, label: "Bede", icon: LayoutGrid },
+            { k: "calendar" as View, label: "I dag", icon: CalendarDays },
+          ];
+          const more = [
+            { k: "plants" as View, label: "Planter", icon: Sprout },
+            { k: "journal" as View, label: "Journal", icon: NotebookPen },
+            { k: "yearwheel" as View, label: "Årshjul", icon: CalendarRange },
+            { k: "neighbors" as View, label: "Naboer", icon: Users },
+            { k: "iot" as View, label: "Smart enheder", icon: Radio },
+            { k: "coach" as View, label: "Sæson-coach", icon: Leaf },
+            { k: "insights" as View, label: "Indsigt & historik", icon: BarChart3 },
+          ];
+          const inMore = more.find(m => m.k === view);
+          const moreLabel = inMore ? inMore.label : "Mere";
+          return (
+            <div style={{ display: "flex", gap: 6, marginBottom: 18, padding: 4, background: "var(--ink-50)", borderRadius: 100, width: "fit-content", alignItems: "center" }}>
+              {primary.map(({ k, label, icon: Icon }) => (
+                <button key={k} onClick={() => setViewPersist(k)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "8px 14px", borderRadius: 100, border: "none",
+                    background: view === k ? "var(--paper)" : "transparent",
+                    boxShadow: view === k ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    color: view === k ? "var(--ink-900)" : "var(--ink-500)",
+                    fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  }}>
+                  <Icon size={14} /> {label}
+                </button>
+              ))}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "8px 14px", borderRadius: 100, border: "none",
+                    background: inMore ? "var(--paper)" : "transparent",
+                    boxShadow: inMore ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    color: inMore ? "var(--ink-900)" : "var(--ink-500)",
+                    fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  }}>
+                    {moreLabel} <ChevronDown size={14} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  {more.map(({ k, label, icon: Icon }) => (
+                    <DropdownMenuItem key={k} onClick={() => setViewPersist(k)}
+                      className={view === k ? "bg-accent" : ""}>
+                      <Icon size={14} className="mr-2" /> {label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        })()}
 
         {/* Calendar view (watering schedules) */}
         {garden && zones.length > 0 && view === "calendar" && (
