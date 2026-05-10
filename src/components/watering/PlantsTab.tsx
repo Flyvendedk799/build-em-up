@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Plus, Leaf, Droplets, Sun, MoreHorizontal } from "lucide-react";
+import { Search, Plus, Leaf, Droplets, MoreHorizontal, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { ZonePlant } from "./PlantChips";
