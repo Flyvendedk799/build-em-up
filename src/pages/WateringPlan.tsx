@@ -747,6 +747,16 @@ export default function WateringPlan() {
         onConfirm={async (min) => { if (quickWaterZone) await waterNow(quickWaterZone, min); }}
       />
 
+      <PlantDetailSheet
+        plant={openPlant?.plant ?? null}
+        zoneName={openPlant?.zoneName ?? ""}
+        zones={zones.map(z => ({ id: z.id, name: z.name }))}
+        onOpenChange={(v) => !v && setOpenPlant(null)}
+        onUpdated={(id, patch) => updatePlantLocal(id, patch as any)}
+        onRemoved={(id) => removePlantLocal(id)}
+        onMoved={(id, newZoneId) => movePlantLocal(id, newZoneId)}
+      />
+
       <SiteFooter />
     </>
   );
