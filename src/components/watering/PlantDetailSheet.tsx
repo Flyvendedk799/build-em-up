@@ -33,12 +33,13 @@ const MONTHS = ["jan","feb","mar","apr","maj","jun","jul","aug","sep","okt","nov
 const QUICK_QS = ["Hvornår skal jeg vande?", "Hvordan beskærer jeg?", "Hvilke skadedyr?", "Gødning?"];
 
 export default function PlantDetailSheet({
-  plant, zoneName, zone, zones, onOpenChange, onUpdated, onRemoved, onMoved,
+  plant, zoneName, zone, zones, bedPlants = [], onOpenChange, onUpdated, onRemoved, onMoved,
 }: {
   plant: (ZonePlant & { planted_at?: string | null; notes?: string | null; image_url?: string | null }) | null;
   zoneName: string;
   zone?: { id: string; name: string; sun_exposure?: string | null; soil?: string | null } | null;
   zones: { id: string; name: string }[];
+  bedPlants?: ZonePlant[];
   onOpenChange: (v: boolean) => void;
   onUpdated: (id: string, patch: { qty?: number; custom_name?: string | null; planted_at?: string | null; notes?: string | null; image_url?: string | null }) => void;
   onRemoved: (id: string) => void;
