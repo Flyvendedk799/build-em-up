@@ -811,6 +811,8 @@ export default function WateringPlan() {
         }}
       />
 
+      {user && garden && <GardenChatBubble />}
+
       <SiteFooter />
     </>
   );
