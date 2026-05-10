@@ -179,6 +179,22 @@ export default function WateringPlan() {
     fetchForecast(garden.latitude, garden.longitude).then(setForecasts).catch(() => setForecasts([]));
   }, [garden?.latitude, garden?.longitude]);
 
+  // catalog (for season calendar)
+  useEffect(() => {
+    const slugs = Array.from(new Set(
+      Object.values(plantsByZone).flat().map(p => p.plant_slug).filter(Boolean) as string[]
+    ));
+    if (slugs.length === 0) { setCatalogBySlug({}); return; }
+    supabase.from("plants_catalog")
+      .select("slug,name_da,sow_months,harvest_months,transplant_months,prune_months,winterize_months")
+      .in("slug", slugs)
+      .then(({ data }) => {
+        const map: Record<string, any> = {};
+        (data ?? []).forEach((c: any) => { map[c.slug] = c; });
+        setCatalogBySlug(map);
+      });
+  }, [plantsByZone]);
+
   const decideOpts = useMemo(() => ({ pauseUntil, snoozedKeys }), [pauseUntil, snoozedKeys]);
   const summary = useMemo(() => weekSummary(schedules, zones, forecasts, decideOpts), [schedules, zones, forecasts, decideOpts]);
   const precip24h = useMemo(() => precipNextHours(forecasts, 24), [forecasts]);
