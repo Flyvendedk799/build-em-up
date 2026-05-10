@@ -590,6 +590,7 @@ export default function WateringPlan() {
               { k: "journal", label: "Journal", icon: NotebookPen },
               { k: "calendar", label: "Vandinger", icon: CalendarDays },
               { k: "yearwheel", label: "Årshjul", icon: CalendarRange },
+              { k: "neighbors", label: "Naboer", icon: Users },
               { k: "coach", label: "Sæson", icon: Leaf },
               { k: "insights", label: "Indsigt", icon: BarChart3 },
             ] as const).map(({ k, label, icon: Icon }) => (
