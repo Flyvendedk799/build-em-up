@@ -562,6 +562,7 @@ export default function WateringPlan() {
             {([
               { k: "cards", label: "Bede", icon: LayoutGrid },
               { k: "plants", label: "Planter", icon: Sprout },
+              { k: "journal", label: "Journal", icon: NotebookPen },
               { k: "calendar", label: "Kalender", icon: CalendarDays },
               { k: "coach", label: "Sæson", icon: Leaf },
               { k: "insights", label: "Indsigt", icon: BarChart3 },
