@@ -856,7 +856,22 @@ export default function WateringPlan() {
         }}
       />
 
-      {user && garden && <GardenChatBubble />}
+      <BedScanDialog
+        open={!!scanZone}
+        onOpenChange={(v) => !v && setScanZone(null)}
+        zoneName={scanZone?.name ?? ""}
+        plantNames={(scanZone ? plantsByZone[scanZone.id] ?? [] : []).map(p => p.custom_name || p.name_da || p.plant_slug || "plante")}
+        onWaterNow={() => scanZone && setQuickWaterZone(scanZone)}
+      />
+
+      <BedChatDialog
+        open={!!chatZone}
+        onOpenChange={(v) => !v && setChatZone(null)}
+        zoneName={chatZone?.name ?? ""}
+        plantNames={(chatZone ? plantsByZone[chatZone.id] ?? [] : []).map(p => p.custom_name || p.name_da || p.plant_slug || "plante")}
+        sun={chatZone?.sun_exposure}
+        soil={chatZone?.soil}
+      />
 
       <SiteFooter />
     </>
