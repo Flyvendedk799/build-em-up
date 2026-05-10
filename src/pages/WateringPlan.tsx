@@ -242,17 +242,67 @@ export default function WateringPlan() {
     setSchedules(prev => prev.filter(s => s.id !== id));
     await supabase.from("watering_schedules").delete().eq("id", id);
   }
-  async function waterNow(zone: ZoneRow) {
+  async function waterNow(zone: ZoneRow, minutes = 15) {
     if (!user) return;
-    const liters = litersForSession(zone, 15);
+    const liters = litersForSession(zone, minutes);
+    const mm = Math.round((minutes / 15) * 5);
     const { data, error } = await supabase.from("watering_events").insert({
       user_id: user.id, zone_id: zone.id, schedule_id: null,
       scheduled_for: new Date().toISOString(), ran_at: new Date().toISOString(),
-      weather_skipped: false, reason: "Manuel", mm_delivered: 5,
+      weather_skipped: false, reason: `Manuel · ${minutes} min`, mm_delivered: mm,
     }).select().single();
     if (error || !data) { toast.error(error?.message ?? "Fejl"); return; }
     setEvents(prev => [data as EventRow, ...prev]);
-    toast.success(`Vander ${zone.name} · ~${liters} L`);
+    const eventId = (data as EventRow).id;
+    toast.success(`Vander ${zone.name} · ~${liters} L`, {
+      action: {
+        label: "Fortryd",
+        onClick: async () => {
+          await supabase.from("watering_events").delete().eq("id", eventId);
+          setEvents(prev => prev.filter(e => e.id !== eventId));
+          toast.success("Fortrudt");
+        },
+      },
+    });
+  }
+
+  // ----- Plants CRUD -----
+  async function addPlants(zone: ZoneRow, items: { slug?: string; custom_name?: string; qty: number; meta?: any }[]) {
+    if (!user || !garden) return;
+    const rows = items.map(i => ({
+      user_id: user.id, garden_id: garden.id, zone_id: zone.id,
+      plant_slug: i.slug ?? null, custom_name: i.custom_name ?? null, qty: i.qty,
+    }));
+    const { data, error } = await supabase.from("user_plants").insert(rows).select();
+    if (error) { toast.error(error.message); return; }
+    const newOnes: ZonePlant[] = (data ?? []).map((p: any) => {
+      const meta = items.find(i => i.slug === p.plant_slug)?.meta;
+      return {
+        id: p.id, zone_id: p.zone_id, plant_slug: p.plant_slug,
+        custom_name: p.custom_name, qty: p.qty,
+        name_da: meta?.name_da, water_need: meta?.water_need, image_url: meta?.image_url,
+      };
+    });
+    setPlantsByZone(prev => ({ ...prev, [zone.id]: [...(prev[zone.id] ?? []), ...newOnes] }));
+  }
+
+  async function removePlant(zoneId: string, p: ZonePlant) {
+    setPlantsByZone(prev => ({ ...prev, [zoneId]: (prev[zoneId] ?? []).filter(x => x.id !== p.id) }));
+    const { error } = await supabase.from("user_plants").delete().eq("id", p.id);
+    if (error) toast.error(error.message);
+    else toast.success("Plante fjernet", {
+      action: {
+        label: "Fortryd",
+        onClick: async () => {
+          if (!user || !garden) return;
+          const { data } = await supabase.from("user_plants").insert({
+            user_id: user.id, garden_id: garden.id, zone_id: zoneId,
+            plant_slug: p.plant_slug, custom_name: p.custom_name, qty: p.qty,
+          }).select().single();
+          if (data) setPlantsByZone(prev => ({ ...prev, [zoneId]: [...(prev[zoneId] ?? []), { ...p, id: (data as any).id }] }));
+        },
+      },
+    });
   }
 
   // ----- AI Plan -----
