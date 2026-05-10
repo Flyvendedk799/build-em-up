@@ -8,12 +8,13 @@ import type { ZonePlant } from "./PlantChips";
 type Zone = { id: string; name: string; sun_exposure?: string | null };
 
 export default function PlantsTab({
-  zones, plantsByZone, onOpenPlant, onAddToZone,
+  zones, plantsByZone, onOpenPlant, onAddToZone, onIdentify,
 }: {
   zones: Zone[];
   plantsByZone: Record<string, ZonePlant[]>;
   onOpenPlant: (p: ZonePlant, zoneName: string) => void;
   onAddToZone: (zone: Zone) => void;
+  onIdentify: () => void;
 }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "high" | "medium" | "low">("all");
