@@ -28,7 +28,7 @@ export default function IdentifyPlantDialog({
   onOpenChange: (v: boolean) => void;
   zones: Zone[];
   defaultZoneId?: string | null;
-  onAdded: () => void;
+  onAdded: (plant: { id: string; zone_id: string; plant_slug: string | null; custom_name: string | null; qty: number; image_url: string | null; notes: string | null; name_da?: string; water_need?: string | null }) => void;
 }) {
   const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
@@ -84,7 +84,7 @@ export default function IdentifyPlantDialog({
       const { data: zoneRow } = await supabase.from("garden_zones").select("garden_id").eq("id", zoneId).maybeSingle();
       const gardenId = zoneRow?.garden_id;
       if (!gardenId) throw new Error("Bed uden have");
-      const { error } = await supabase.from("user_plants").insert({
+      const { data: inserted, error } = await supabase.from("user_plants").insert({
         user_id: user.id,
         garden_id: gardenId,
         zone_id: zoneId,
@@ -93,10 +93,20 @@ export default function IdentifyPlantDialog({
         qty: 1,
         image_url: url,
         notes: result.care_tip,
-      });
+      }).select().single();
       if (error) throw error;
       toast.success(`${result.name_da} tilføjet til ${z?.name}`);
-      onAdded();
+      onAdded({
+        id: (inserted as any).id,
+        zone_id: zoneId,
+        plant_slug: matchedSlug,
+        custom_name: matchedSlug ? null : result.name_da,
+        qty: 1,
+        image_url: url,
+        notes: result.care_tip,
+        name_da: result.name_da,
+        water_need: result.water_need ?? null,
+      });
       onOpenChange(false);
     } catch (e: any) {
       toast.error(e?.message ?? "Kunne ikke tilføje");
