@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf, BarChart3, Sprout, NotebookPen, CalendarRange, Users, Radio } from "lucide-react";
+import { Sparkles, Plus, Pencil, Trash2, Droplets, Calendar, LayoutGrid, CalendarDays, Leaf, BarChart3, Sprout, NotebookPen, CalendarRange, Users, Radio, Camera, ChevronDown } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import BedScanDialog from "@/components/watering/BedScanDialog";
+import BedChatDialog from "@/components/watering/BedChatDialog";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -35,7 +38,7 @@ import IdentifyPlantDialog from "@/components/watering/IdentifyPlantDialog";
 import JournalTab, { logJournal } from "@/components/watering/JournalTab";
 import MorningBriefing from "@/components/watering/MorningBriefing";
 import CalendarTab from "@/components/watering/CalendarTab";
-import GardenChatBubble from "@/components/watering/GardenChatBubble";
+// GardenChatBubble removed — chat is now contextual per bed (BedChatDialog)
 import NeighborsTab from "@/components/watering/NeighborsTab";
 import IoTTab from "@/components/watering/IoTTab";
 import { Button } from "@/components/ui/button";
@@ -81,7 +84,8 @@ export default function WateringPlan() {
   const [quickWaterZone, setQuickWaterZone] = useState<ZoneRow | null>(null);
   const [openPlant, setOpenPlant] = useState<{ plant: ZonePlant; zoneName: string; zoneId: string } | null>(null);
   const [identifyOpen, setIdentifyOpen] = useState(false);
-
+  const [scanZone, setScanZone] = useState<ZoneRow | null>(null);
+  const [chatZone, setChatZone] = useState<ZoneRow | null>(null);
   // pause + snooze + alert state (persisted to localStorage)
   const [pauseUntil, setPauseUntilState] = useState<Date | null>(() => {
     const v = localStorage.getItem("watering.pauseUntil");
@@ -582,34 +586,63 @@ export default function WateringPlan() {
           <SmartInsights schedules={schedules} zones={zones} forecasts={forecasts} opts={decideOpts} />
         )}
 
-        {/* View tabs */}
-        {garden && zones.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 18, padding: 4, background: "var(--ink-50)", borderRadius: 100, width: "fit-content" }}>
-            {([
-              { k: "cards", label: "Bede", icon: LayoutGrid },
-              { k: "plants", label: "Planter", icon: Sprout },
-              { k: "journal", label: "Journal", icon: NotebookPen },
-              { k: "calendar", label: "Vandinger", icon: CalendarDays },
-              { k: "yearwheel", label: "Årshjul", icon: CalendarRange },
-              { k: "neighbors", label: "Naboer", icon: Users },
-              { k: "iot", label: "Smart", icon: Radio },
-              { k: "coach", label: "Sæson", icon: Leaf },
-              { k: "insights", label: "Indsigt", icon: BarChart3 },
-            ] as const).map(({ k, label, icon: Icon }) => (
-              <button key={k} onClick={() => setViewPersist(k)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "8px 14px", borderRadius: 100, border: "none",
-                  background: view === k ? "var(--paper)" : "transparent",
-                  boxShadow: view === k ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-                  color: view === k ? "var(--ink-900)" : "var(--ink-500)",
-                  fontSize: 13, fontWeight: 500, cursor: "pointer",
-                }}>
-                <Icon size={14} /> {label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* View tabs — 3 primary + dropdown */}
+        {garden && zones.length > 0 && (() => {
+          const primary = [
+            { k: "cards" as View, label: "Bede", icon: LayoutGrid },
+            { k: "calendar" as View, label: "I dag", icon: CalendarDays },
+          ];
+          const more = [
+            { k: "plants" as View, label: "Planter", icon: Sprout },
+            { k: "journal" as View, label: "Journal", icon: NotebookPen },
+            { k: "yearwheel" as View, label: "Årshjul", icon: CalendarRange },
+            { k: "neighbors" as View, label: "Naboer", icon: Users },
+            { k: "iot" as View, label: "Smart enheder", icon: Radio },
+            { k: "coach" as View, label: "Sæson-coach", icon: Leaf },
+            { k: "insights" as View, label: "Indsigt & historik", icon: BarChart3 },
+          ];
+          const inMore = more.find(m => m.k === view);
+          const moreLabel = inMore ? inMore.label : "Mere";
+          return (
+            <div style={{ display: "flex", gap: 6, marginBottom: 18, padding: 4, background: "var(--ink-50)", borderRadius: 100, width: "fit-content", alignItems: "center" }}>
+              {primary.map(({ k, label, icon: Icon }) => (
+                <button key={k} onClick={() => setViewPersist(k)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "8px 14px", borderRadius: 100, border: "none",
+                    background: view === k ? "var(--paper)" : "transparent",
+                    boxShadow: view === k ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    color: view === k ? "var(--ink-900)" : "var(--ink-500)",
+                    fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  }}>
+                  <Icon size={14} /> {label}
+                </button>
+              ))}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "8px 14px", borderRadius: 100, border: "none",
+                    background: inMore ? "var(--paper)" : "transparent",
+                    boxShadow: inMore ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    color: inMore ? "var(--ink-900)" : "var(--ink-500)",
+                    fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  }}>
+                    {moreLabel} <ChevronDown size={14} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  {more.map(({ k, label, icon: Icon }) => (
+                    <DropdownMenuItem key={k} onClick={() => setViewPersist(k)}
+                      className={view === k ? "bg-accent" : ""}>
+                      <Icon size={14} className="mr-2" /> {label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        })()}
 
         {/* Calendar view (watering schedules) */}
         {garden && zones.length > 0 && view === "calendar" && (
@@ -677,7 +710,9 @@ export default function WateringPlan() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <Button size="sm" variant="ghost" onClick={() => setQuickWaterZone(z)}><Droplets size={14} className="mr-1" />Vand nu</Button>
+                        <Button size="sm" variant="default" onClick={() => setScanZone(z)} title="Tag foto og lad AI vurdere bedet"><Camera size={14} className="mr-1" />Scan</Button>
+                        <Button size="sm" variant="outline" onClick={() => setChatZone(z)} title="Spørg AI om dette bed"><Sparkles size={14} className="mr-1" />Spørg AI</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setQuickWaterZone(z)}><Droplets size={14} className="mr-1" />Vand</Button>
                         <Button size="sm" variant="ghost" onClick={() => addSchedule(z.id)}><Plus size={14} className="mr-1" />Timer</Button>
                         <Button size="sm" variant="ghost" onClick={() => { setEditing({ id: z.id, name: z.name, type: z.type, area_m2: Number(z.area_m2 ?? 10), sun_exposure: z.sun_exposure ?? "sun", soil: z.soil ?? "loam" }); setBedOpen(true); }}>
                           <Pencil size={14} />
@@ -821,7 +856,22 @@ export default function WateringPlan() {
         }}
       />
 
-      {user && garden && <GardenChatBubble />}
+      <BedScanDialog
+        open={!!scanZone}
+        onOpenChange={(v) => !v && setScanZone(null)}
+        zoneName={scanZone?.name ?? ""}
+        plantNames={(scanZone ? plantsByZone[scanZone.id] ?? [] : []).map(p => p.custom_name || p.name_da || p.plant_slug || "plante")}
+        onWaterNow={() => scanZone && setQuickWaterZone(scanZone)}
+      />
+
+      <BedChatDialog
+        open={!!chatZone}
+        onOpenChange={(v) => !v && setChatZone(null)}
+        zoneName={chatZone?.name ?? ""}
+        plantNames={(chatZone ? plantsByZone[chatZone.id] ?? [] : []).map(p => p.custom_name || p.name_da || p.plant_slug || "plante")}
+        sun={chatZone?.sun_exposure}
+        soil={chatZone?.soil}
+      />
 
       <SiteFooter />
     </>
