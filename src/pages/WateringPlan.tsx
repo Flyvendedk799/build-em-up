@@ -38,7 +38,7 @@ import IdentifyPlantDialog from "@/components/watering/IdentifyPlantDialog";
 import JournalTab, { logJournal } from "@/components/watering/JournalTab";
 import MorningBriefing from "@/components/watering/MorningBriefing";
 import CalendarTab from "@/components/watering/CalendarTab";
-import GardenChatBubble from "@/components/watering/GardenChatBubble";
+// GardenChatBubble removed — chat is now contextual per bed (BedChatDialog)
 import NeighborsTab from "@/components/watering/NeighborsTab";
 import IoTTab from "@/components/watering/IoTTab";
 import { Button } from "@/components/ui/button";
