@@ -99,7 +99,8 @@ export default function GardenSizer() {
     });
     supabase.functions.invoke("get-ortofoto-config").then(({ data }) => {
       if (data?.wmsTemplate) setOrtoCfg({ wmsTemplate: data.wmsTemplate });
-    });
+      else setImagery("mapbox");
+    }).catch(() => setImagery("mapbox"));
   }, []);
 
   // ----- Pre-connect warm-up so the pinpoint overlay boots without a freeze -----
@@ -158,6 +159,13 @@ export default function GardenSizer() {
         version: 8,
         glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
         sources: {
+          sat: {
+            type: "raster",
+            tiles: [`https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90?access_token=${mapboxToken}`],
+            tileSize: 256,
+            attribution: "© Mapbox",
+            maxzoom: 19,
+          },
           orto: {
             type: "raster",
             tiles: [ortoCfg.wmsTemplate],
@@ -165,11 +173,14 @@ export default function GardenSizer() {
             attribution: "© SDFE / Dataforsyningen",
           },
         },
-        layers: [{ id: "orto", type: "raster", source: "orto" }],
+        layers: [
+          { id: "sat", type: "raster", source: "sat" },
+          { id: "orto", type: "raster", source: "orto", paint: { "raster-opacity": 0.88 } },
+        ],
       } as any;
     }
     return "mapbox://styles/mapbox/satellite-streets-v12" as any;
-  }, [imagery, ortoCfg]);
+  }, [imagery, ortoCfg, mapboxToken]);
 
   // ----- Init / re-init map -----
   useEffect(() => {
@@ -580,7 +591,7 @@ export default function GardenSizer() {
   }
 
   // ----- Matrikel lookup -----
-  async function loadMatrikel(center = chosen?.center) {
+  async function loadMatrikel(center = chosen?.center, opts: { silent?: boolean } = {}) {
     if (!center) return;
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-matrikel?lng=${center[0]}&lat=${center[1]}`;
     try {
@@ -588,11 +599,11 @@ export default function GardenSizer() {
       const j = await r.json();
       const feat = j?.features?.[0];
       const coords = feat?.geometry?.coordinates;
-      if (!coords) { toast("Ingen matrikel fundet"); return; }
+      if (!coords) { if (!opts.silent) toast("Ingen matrikel fundet"); return; }
       const outer: LngLat[] = (coords[0][0] && Array.isArray(coords[0][0][0])) ? coords[0][0] : coords[0];
       setMatrikel(outer.map((p: any) => [p[0], p[1]]));
-      toast.success("Matrikel hentet");
-    } catch { toast.error("Matrikel-opslag fejlede"); }
+      if (!opts.silent) toast.success("Matrikel hentet");
+    } catch { if (!opts.silent) toast.error("Matrikel-opslag fejlede"); }
   }
 
   function useMatrikelAsBase() {
@@ -878,7 +889,7 @@ export default function GardenSizer() {
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <div style={{ display: "flex", gap: 0, border: "1px solid var(--ink-200)", borderRadius: 8, overflow: "hidden", fontSize: 12 }}>
-                  <button onClick={() => setImagery("ortofoto")} style={{ padding: "6px 10px", background: imagery === "ortofoto" ? "var(--gold)" : "transparent", color: imagery === "ortofoto" ? "#14271d" : "inherit", border: 0 }}>Ortofoto 12cm</button>
+                  <button onClick={() => ortoCfg && setImagery("ortofoto")} disabled={!ortoCfg} style={{ padding: "6px 10px", background: imagery === "ortofoto" ? "var(--gold)" : "transparent", color: imagery === "ortofoto" ? "#14271d" : "inherit", border: 0, opacity: ortoCfg ? 1 : 0.45 }}>Ortofoto 12cm</button>
                   <button onClick={() => setImagery("mapbox")} style={{ padding: "6px 10px", background: imagery === "mapbox" ? "var(--gold)" : "transparent", color: imagery === "mapbox" ? "#14271d" : "inherit", border: 0 }}>Mapbox</button>
                 </div>
                 <button className="change-addr" onClick={() => { setStep(1); clear(); }}>
@@ -1010,7 +1021,7 @@ export default function GardenSizer() {
             setStep(2);
             setPinpointing(null);
             // Auto-load the cadastral parcel so AI is constrained to the user's property.
-            setTimeout(() => { loadMatrikel(pinpointing.center).catch(() => {}); }, 50);
+            setTimeout(() => { loadMatrikel(pinpointing.center, { silent: true }).catch(() => {}); }, 50);
           }}
         />
       )}

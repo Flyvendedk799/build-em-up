@@ -157,12 +157,10 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
         type: "raster",
         source: "sat",
         paint: {
-          // Hand off to ortofoto earlier (and over a tighter window) so the
-          // pitched descent is always rendered from sharp source data.
-          "raster-opacity": [
-            "interpolate", ["linear"], ["zoom"],
-            13, 1, 15.5, 0,
-          ],
+          // Keep satellite visible under the ortofoto proxy. If Dataforsyningen
+          // drops a tile, the proxy returns transparency and Mapbox still shows
+          // useful imagery instead of a blank square.
+          "raster-opacity": 1,
           "raster-fade-duration": 300,
         },
       },
@@ -181,7 +179,7 @@ export default function PinpointSequence({ address, center, mapboxToken, ortoWms
         paint: {
           "raster-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            13, 0, 15.5, 1,
+            13, 0, 15.5, 0.88,
           ],
           "raster-fade-duration": 300,
         },

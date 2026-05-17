@@ -3,6 +3,9 @@ project_id = "fpfndbikyvnsuvalqjls"
 [functions.get-ortofoto-config]
 verify_jwt = false
 
+[functions.ortofoto-tile]
+verify_jwt = false
+
 [functions.get-matrikel]
 verify_jwt = false
 
@@ -17,4 +20,3 @@ verify_jwt = false
 
 [functions.plant-diagnose]
 verify_jwt = false
-

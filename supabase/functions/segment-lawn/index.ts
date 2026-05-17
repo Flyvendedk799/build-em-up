@@ -261,6 +261,58 @@ function areaMetersFromPx(areaPx: number, width: number, height: number, bbox: [
   return (areaPx / (width * height)) * widthM * heightM;
 }
 
+async function fetchImageWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      signal: controller.signal,
+      headers: { "Accept-Encoding": "identity", Accept: "image/jpeg,image/png" },
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchImageBytes(url: string, attempts = 2, timeoutMs = 6500): Promise<Uint8Array> {
+  let last = "";
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const response = await fetchImageWithTimeout(url, timeoutMs);
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        last = `HTTP ${response.status}: ${text.slice(0, 180)}`;
+        continue;
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > 100) return bytes;
+      last = "empty image response";
+    } catch (e) {
+      last = String(e);
+    }
+  }
+  throw new Error(last || "image fetch failed");
+}
+
+async function fetchMapboxFallbackImage(
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+): Promise<Uint8Array | null> {
+  const token = Deno.env.get("MAPBOX_PUBLIC_TOKEN");
+  if (!token) return null;
+  const [minLng, minLat, maxLng, maxLat] = bbox;
+  const staticUrl = `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/`
+    + `[${minLng},${minLat},${maxLng},${maxLat}]/${width}x${height}`
+    + `?access_token=${encodeURIComponent(token)}`;
+  try {
+    return await fetchImageBytes(staticUrl, 1, 6500);
+  } catch (e) {
+    console.warn("mapbox fallback image failed", String(e));
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -358,12 +410,17 @@ Deno.serve(async (req: Request) => {
       + `&width=${width}&height=${height}&crs=EPSG:4326`
       + `&bbox=${minLat},${minLng},${maxLat},${maxLng}&token=${dfToken}`;
 
-    const imgRes = await fetch(wms, { headers: { "Accept-Encoding": "identity", "Accept": "image/jpeg" } });
-    if (!imgRes.ok) {
-      const t = await imgRes.text().catch(() => "");
-      return json({ error: "imagery_fetch_failed", status: imgRes.status, detail: t.slice(0, 200) }, 502);
+    let imgBuf: Uint8Array;
+    try {
+      imgBuf = await fetchImageBytes(wms, 2, 6500);
+    } catch (e) {
+      console.warn("ortofoto crop failed, trying mapbox fallback", String(e));
+      const fallback = await fetchMapboxFallbackImage([minLng, minLat, maxLng, maxLat], width, height);
+      if (!fallback) {
+        return json({ error: "imagery_fetch_failed", detail: String(e) }, 502);
+      }
+      imgBuf = fallback;
     }
-    const imgBuf = new Uint8Array(await imgRes.arrayBuffer());
     let bin = "";
     const CHUNK = 0x8000;
     for (let i = 0; i < imgBuf.length; i += CHUNK) {
