@@ -15,6 +15,7 @@ const corsHeaders = {
 const LOVABLE_API = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const FLASH_MODEL = "google/gemini-2.5-flash";
 const MODEL_TIMEOUT_MS = 13500;
+const REFINE_TIMEOUT_MS = 6500;
 const DEFAULT_CROP_METERS = 36;
 const DEFAULT_IMAGE_SIZE = 512;
 const MIN_IMAGE_SIZE = 256;
@@ -91,6 +92,17 @@ type ModelResult =
   | { ok: true; content: string }
   | { ok: false; code: string; status: number; detail: string };
 
+type SegmentCandidate = {
+  polygon: [number, number][];
+  exclusions: [number, number][][];
+  confidence: number;
+  notes?: string;
+};
+
+type CandidateResult =
+  | { ok: true; candidate: SegmentCandidate }
+  | { ok: false; code: string; status: number; detail: string; noLawn?: boolean };
+
 async function callModel(model: string, prompt: string, b64: string, aiKey: string, timeoutMs = MODEL_TIMEOUT_MS): Promise<ModelResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -156,7 +168,11 @@ GOAL: Trace the OUTER BOUNDARY of the SINGLE connected lawn region that contains
 INCLUDE: continuous grass, mowed strips, areas with patchy/yellowing grass that are still maintained turf.
 EXCLUDE: buildings, roofs, driveways, parking, gravel/grus, terraces, wooden decks, paved paths, flowerbeds (bede), hedges, individual shrubs, trees with closed canopy, ponds/water, sand pits, bare soil, neighbouring lawns separated by hedge/fence/path.${hintNote}${parcelNote}
 
-If the marker is clearly not on grass, return an empty polygon with low confidence. Otherwise follow the visible lawn edge clockwise. Stay within 1-2 px of the visible transition. For curved edges use more vertices; for straight edges use fewer.
+If the marker is clearly not on grass, return an empty polygon with low confidence.
+
+CRITICAL: This is NOT a parcel outline and NOT a convex hull. Do not connect around roofs, patios, roads, driveways, parked cars, gravel or paving. Every polygon edge must stay on the grass/non-grass transition. If a straight segment would cross hardscape or a building, add more vertices and trace around the grass edge instead.
+
+Follow the visible turf edge clockwise. Stay within 1-2 px of the visible transition. Use many vertices for irregular residential lawns; accuracy beats simplicity.
 
 OUTPUT — STRICT JSON only, no markdown, no commentary:
 {
@@ -167,11 +183,44 @@ OUTPUT — STRICT JSON only, no markdown, no commentary:
 }
 
 REQUIREMENTS:
-- polygon: [] if marker is not on grass; otherwise 8-70 integer-pixel vertices, ordered clockwise along the boundary, MUST contain pixel (${px}, ${py}), no self-intersection, vertices in [0,${width}] x [0,${height}].
+- polygon: [] if marker is not on grass; otherwise 18-90 integer-pixel vertices, ordered clockwise along the boundary, MUST contain pixel (${px}, ${py}), no self-intersection, vertices in [0,${width}] x [0,${height}].
+- Prefer extra vertices at every visible corner where grass meets roof, driveway, terrace, hedge, bed or road.
 - exclusions: 0-3 inner rings for non-lawn islands inside the main polygon (flowerbeds, ponds). Each 6-30 vertices. Empty array if none obvious.
 - confidence: honest estimate. 0.9+ = boundary unambiguous; 0.6-0.8 = some shaded/occluded edges; <0.6 = significant uncertainty.
 
 Return ONLY the JSON object.`;
+}
+
+function buildRefinePrompt(
+  width: number,
+  height: number,
+  px: number,
+  py: number,
+  previousPolygon: [number, number][],
+  opts: { parcelPixels?: [number, number][] } = {},
+) {
+  const parcelNote = opts.parcelPixels?.length
+    ? `\nPROPERTY LIMIT pixels: ${JSON.stringify(opts.parcelPixels.slice(0, 80))}. Stay inside it.`
+    : "";
+
+  return `You are correcting an aerial lawn segmentation.
+
+Image size: ${width}x${height}. Marker pixel: (${px}, ${py}).
+Previous polygon: ${JSON.stringify(previousPolygon)}
+
+The previous polygon may be too coarse. Fix it so it includes ONLY visible grass connected to the marker.
+
+Hard rule: remove any roof, patio, driveway, road, parking area, gravel, paving, hedge, flowerbed, tree canopy, car, or bare soil. Do not draw a hull around those objects. If an edge crosses non-grass, replace it with vertices along the real grass boundary.${parcelNote}
+
+Return STRICT JSON only:
+{
+  "polygon": [[x,y], ...],
+  "exclusions": [[[x,y], ...], ...],
+  "confidence": 0.0-1.0,
+  "notes": "<short correction note>"
+}
+
+Requirements: polygon must contain (${px}, ${py}), use 18-90 integer vertices, no self-intersection, all vertices inside [0,${width}] x [0,${height}].`;
 }
 
 function parseJson(txt: string): any | null {
@@ -259,6 +308,94 @@ function areaMetersFromPx(areaPx: number, width: number, height: number, bbox: [
   const widthM = Math.abs(maxLng - minLng) * 111320 * Math.cos((lat * Math.PI) / 180);
   const heightM = Math.abs(maxLat - minLat) * 111320;
   return (areaPx / (width * height)) * widthM * heightM;
+}
+
+function maxEdgePx(poly: [number, number][]): number {
+  let max = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    max = Math.max(max, Math.hypot(a[0] - b[0], a[1] - b[1]));
+  }
+  return max;
+}
+
+function shouldRefine(poly: [number, number][], width: number, height: number, confidence: number): boolean {
+  const longEdge = maxEdgePx(poly) > Math.min(width, height) * 0.18;
+  return poly.length < 24 || longEdge || confidence < 0.82;
+}
+
+function candidateFromParsed(
+  parsed: any,
+  width: number,
+  height: number,
+  px: number,
+  py: number,
+  bbox: [number, number, number, number],
+  lat: number,
+  parcelPixels?: [number, number][],
+): CandidateResult {
+  if (Array.isArray(parsed?.polygon) && parsed.polygon.length === 0) {
+    return {
+      ok: false,
+      code: "no_lawn",
+      status: 422,
+      detail: typeof parsed.notes === "string" ? parsed.notes : "Ingen plæne fundet ved markøren",
+      noLawn: true,
+    };
+  }
+  if (!parsed?.polygon || !Array.isArray(parsed.polygon) || parsed.polygon.length < 4) {
+    return { ok: false, code: "ai_bad_response", status: 502, detail: "AI response did not include a usable polygon" };
+  }
+
+  const rawPoly = parsePixelRing(parsed.polygon, width, height);
+  if (!rawPoly) {
+    return { ok: false, code: "invalid_geometry", status: 422, detail: "polygon contains invalid coordinates" };
+  }
+
+  const poly = normalizeClockwise(dedupeVertices(rawPoly));
+  const area = polyAreaPx(poly);
+  const minArea = (width * height) * 0.005;
+  const maxArea = (width * height) * 0.95;
+  const areaM2 = areaMetersFromPx(area, width, height, bbox, lat);
+  const containsClick = pointInOrOnPoly(px, py, poly);
+
+  let failureReason = "";
+  if (!containsClick) failureReason = `polygon does not contain marker pixel (${px}, ${py})`;
+  else if (area < minArea) failureReason = `polygon too small (${Math.round(area)} px², expected > ${Math.round(minArea)})`;
+  else if (area > maxArea) failureReason = "polygon covers nearly the whole crop — likely the wrong region";
+  else if (areaM2 < 4) failureReason = `polygon area too small (${areaM2.toFixed(1)} m²)`;
+  else if (areaM2 > 5000) failureReason = `polygon area too large (${Math.round(areaM2)} m²)`;
+  else if (hasSelfIntersection(poly)) failureReason = "polygon self-intersects";
+  else if (parcelPixels?.length && !ringInsideRing(poly, parcelPixels)) failureReason = "polygon leaves parcel boundary";
+
+  const confidence = Math.max(0, Math.min(1, typeof parsed.confidence === "number" ? parsed.confidence : 0.7));
+  if (!failureReason && confidence < 0.45) failureReason = `low confidence (${confidence.toFixed(2)})`;
+
+  if (failureReason) {
+    return { ok: false, code: "invalid_geometry", status: 422, detail: failureReason };
+  }
+
+  const exclusions: [number, number][][] = Array.isArray(parsed.exclusions)
+    ? parsed.exclusions
+        .filter((r: any) => Array.isArray(r) && r.length >= 4)
+        .map((r: any[]) => parsePixelRing(r, width, height))
+        .filter((r: [number, number][] | null): r is [number, number][] => !!r)
+        .map((r: [number, number][]) => normalizeClockwise(dedupeVertices(r)))
+        .filter((r: [number, number][]) => r.length >= 4)
+        .filter((r: [number, number][]) => !hasSelfIntersection(r))
+        .filter((r: [number, number][]) => ringInsideRing(r, poly))
+    : [];
+
+  return {
+    ok: true,
+    candidate: {
+      polygon: poly,
+      exclusions,
+      confidence,
+      notes: parsed.notes,
+    },
+  };
 }
 
 async function fetchImageWithTimeout(url: string, timeoutMs: number): Promise<Response> {
@@ -385,7 +522,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: "invalid_request", detail: "Crop bbox is empty" }, 400);
     }
 
-    const cacheKey = hashKey(JSON.stringify({ click: [clng.toFixed(6), clat.toFixed(6)], cropMeters, width, height, hint: hint ?? "", parcel: parcelBbox?.map(n=>n.toFixed(5)).join(",") ?? "", v: 6 }));
+    const cacheKey = hashKey(JSON.stringify({ click: [clng.toFixed(6), clat.toFixed(6)], cropMeters, width, height, hint: hint ?? "", parcel: parcelBbox?.map(n=>n.toFixed(5)).join(",") ?? "", v: 7 }));
     const supaUrl = Deno.env.get("SUPABASE_URL")!;
     const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -412,7 +549,7 @@ Deno.serve(async (req: Request) => {
 
     let imgBuf: Uint8Array;
     try {
-      imgBuf = await fetchImageBytes(wms, 2, 6500);
+      imgBuf = await fetchImageBytes(wms, 1, 4500);
     } catch (e) {
       console.warn("ortofoto crop failed, trying mapbox fallback", String(e));
       const fallback = await fetchMapboxFallbackImage([minLng, minLat, maxLng, maxLat], width, height);
@@ -444,7 +581,7 @@ Deno.serve(async (req: Request) => {
       { id: FLASH_MODEL, timeout: MODEL_TIMEOUT_MS },
     ];
 
-    let best: { polygon: [number, number][]; exclusions: [number, number][][]; confidence: number; notes?: string } | null = null;
+    let best: SegmentCandidate | null = null;
     let lastError = "";
     let lastFailure: ModelResult | null = null;
     let noLawnNote: string | null = null;
@@ -460,68 +597,46 @@ Deno.serve(async (req: Request) => {
         lastError = `${model}: unparseable response`;
         continue;
       }
-      // Model explicitly reports no lawn at click — surface that to the client instead of treating as an AI failure.
-      if (Array.isArray(parsed.polygon) && parsed.polygon.length === 0) {
-        noLawnNote = typeof parsed.notes === "string" ? parsed.notes : "Ingen plæne fundet ved markøren";
-        console.warn(`[${model}] no lawn detected: ${noLawnNote}`);
-        lastError = `${model}: no lawn at click`;
-        continue;
-      }
-      if (!parsed.polygon || !Array.isArray(parsed.polygon) || parsed.polygon.length < 4) {
-        console.warn(`[${model}] bad polygon (len=${parsed?.polygon?.length}). Raw:`, JSON.stringify(parsed).slice(0, 400));
-        lastFailure = { ok: false, code: "ai_bad_response", status: 502, detail: "AI response did not include a usable polygon" };
-        lastError = `${model}: invalid polygon shape (len=${parsed?.polygon?.length ?? 0})`;
-        continue;
-      }
-
-      const rawPoly = parsePixelRing(parsed.polygon, width, height);
-      if (!rawPoly) {
-        lastFailure = { ok: false, code: "invalid_geometry", status: 422, detail: "polygon contains invalid coordinates" };
-        lastError = `${model}: polygon contains invalid coordinates`;
-        continue;
-      }
-      let poly = normalizeClockwise(dedupeVertices(rawPoly));
-      const area = polyAreaPx(poly);
-      const minArea = (width * height) * 0.005;
-      const maxArea = (width * height) * 0.95;
-      const areaM2 = areaMetersFromPx(area, width, height, [minLng, minLat, maxLng, maxLat], clat);
-      const containsClick = pointInOrOnPoly(px, py, poly);
-
-      let failureReason = "";
-      if (!containsClick) failureReason = `polygon does not contain marker pixel (${px}, ${py})`;
-      else if (area < minArea) failureReason = `polygon too small (${Math.round(area)} px², expected > ${Math.round(minArea)})`;
-      else if (area > maxArea) failureReason = `polygon covers nearly the whole crop — likely the wrong region`;
-      else if (areaM2 < 4) failureReason = `polygon area too small (${areaM2.toFixed(1)} m²)`;
-      else if (areaM2 > 5000) failureReason = `polygon area too large (${Math.round(areaM2)} m²)`;
-      else if (hasSelfIntersection(poly)) failureReason = "polygon self-intersects";
-      else if (parcelPixels?.length && !ringInsideRing(poly, parcelPixels)) failureReason = "polygon leaves parcel boundary";
-
-      const conf = typeof parsed.confidence === "number" ? parsed.confidence : 0.7;
-      if (!failureReason && conf < 0.45) failureReason = `low confidence (${conf.toFixed(2)})`;
-
-      if (failureReason) {
-        lastFailure = { ok: false, code: "invalid_geometry", status: 422, detail: failureReason };
-        lastError = `${model}: ${failureReason}`;
+      let candidate = candidateFromParsed(parsed, width, height, px, py, [minLng, minLat, maxLng, maxLat], clat, parcelPixels);
+      if (!candidate.ok) {
+        if (candidate.noLawn) {
+          noLawnNote = candidate.detail;
+          console.warn(`[${model}] no lawn detected: ${noLawnNote}`);
+          lastError = `${model}: no lawn at click`;
+          continue;
+        }
+        lastFailure = { ok: false, code: candidate.code, status: candidate.status, detail: candidate.detail };
+        lastError = `${model}: ${candidate.detail}`;
         continue;
       }
 
-      const exclusions: [number, number][][] = Array.isArray(parsed.exclusions)
-        ? parsed.exclusions
-            .filter((r: any) => Array.isArray(r) && r.length >= 4)
-            .map((r: any[]) => parsePixelRing(r, width, height))
-            .filter((r: [number, number][] | null): r is [number, number][] => !!r)
-            .map((r: [number, number][]) => normalizeClockwise(dedupeVertices(r)))
-            .filter((r: [number, number][]) => r.length >= 4)
-            .filter((r: [number, number][]) => !hasSelfIntersection(r))
-            .filter((r: [number, number][]) => ringInsideRing(r, poly))
-        : [];
+      best = candidate.candidate;
 
-      best = {
-        polygon: poly,
-        exclusions,
-        confidence: Math.max(0, Math.min(1, typeof parsed.confidence === "number" ? parsed.confidence : 0.7)),
-        notes: parsed.notes,
-      };
+      if (shouldRefine(best.polygon, width, height, best.confidence)) {
+        const refineResult = await callModel(
+          model,
+          buildRefinePrompt(width, height, px, py, best.polygon, { parcelPixels }),
+          b64,
+          aiKey,
+          REFINE_TIMEOUT_MS,
+        );
+        if (refineResult.ok) {
+          const refinedParsed = parseJson(refineResult.content);
+          if (refinedParsed) {
+            const refined = candidateFromParsed(refinedParsed, width, height, px, py, [minLng, minLat, maxLng, maxLat], clat, parcelPixels);
+            if (refined.ok) {
+              best = {
+                ...refined.candidate,
+                notes: refined.candidate.notes ?? best.notes,
+              };
+            } else {
+              console.warn(`[${model}] refine rejected: ${refined.detail}`);
+            }
+          }
+        } else {
+          console.warn(`[${model}] refine skipped: ${refineResult.detail}`);
+        }
+      }
       break;
     }
 

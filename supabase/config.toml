@@ -6,6 +6,9 @@ verify_jwt = false
 [functions.ortofoto-tile]
 verify_jwt = false
 
+[functions.lawn-crop]
+verify_jwt = false
+
 [functions.get-matrikel]
 verify_jwt = false
 
