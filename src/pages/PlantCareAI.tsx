@@ -355,7 +355,7 @@ export default function PlantCareAI() {
                         </div>
                         {isLastAssistant && (
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/vanding")}>💧 Lav vandingsplan</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/havekompagnon")}>💧 Åbn Havekompagnon</button>
                             <button className="btn btn-ghost btn-sm" onClick={() => navigate("/webshop")}>🛒 Find i shop</button>
                             <button className="btn btn-ghost btn-sm" onClick={() => navigate("/havemaaler")}>📐 Mål have</button>
                           </div>

@@ -114,7 +114,7 @@ export default function Index() {
               <span className="tool-card-link">Mål din have <Arrow /></span>
             </Link>
 
-            <Link to="/vanding" className="tool-card span-5">
+            <Link to="/havekompagnon" className="tool-card span-5">
               <span className="stripe" />
               <div className="tool-visual water-mini">
                 <div className="drops">
@@ -123,9 +123,9 @@ export default function Index() {
                   ))}
                 </div>
               </div>
-              <h3>Vandingsplan</h3>
-              <p>Lav timere for hvert bed. AI'en justerer efter vejrudsigten og planternes behov.</p>
-              <span className="tool-card-link">Planlæg vanding <Arrow /></span>
+              <h3>Havekompagnon</h3>
+              <p>Scan planter, placer fotos på kortet, følg vækst og få en plan der følger vejret.</p>
+              <span className="tool-card-link">Åbn kompagnonen <Arrow /></span>
             </Link>
 
             <Link to="/ai" className="tool-card span-12">

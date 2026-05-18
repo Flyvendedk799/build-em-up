@@ -46,7 +46,7 @@ export default function SmartInsights({ schedules, zones, forecasts, opts }: Pro
             zSched.length === 0 ? "Tilføj en timer." : "Overvej at øge varigheden eller tilføje en ekstra dag."
           }`,
           cta: zSched.length === 0
-            ? { label: "Lav timer", to: "/vanding" }
+            ? { label: "Lav timer", to: "/havekompagnon" }
             : { label: "Find vandingsudstyr", to: "/webshop?cat=vanding" },
         });
       }

@@ -6,7 +6,6 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   ShoppingBag,
   Ruler,
-  Droplets,
   Sparkles,
   User as UserIcon,
   ShoppingCart,
@@ -35,7 +34,7 @@ const PAGES: { label: string; to: string; hint?: string; icon: JSX.Element }[] =
   { label: "Forsiden", to: "/", icon: <Home size={16} /> },
   { label: "Webshop", to: "/webshop", icon: <ShoppingBag size={16} /> },
   { label: "Havemåler", to: "/havemaaler", hint: "Mål din have", icon: <Ruler size={16} /> },
-  { label: "Vandingsplan", to: "/vanding", hint: "Planlæg vanding", icon: <Droplets size={16} /> },
+  { label: "Havekompagnon", to: "/havekompagnon", hint: "Kort, scan og plejeplan", icon: <Leaf size={16} /> },
   { label: "Plantepleje AI", to: "/ai", hint: "Spørg AI'en", icon: <Sparkles size={16} /> },
   { label: "Min konto", to: "/konto", icon: <UserIcon size={16} /> },
   { label: "Kurv", to: "/cart", icon: <ShoppingCart size={16} /> },

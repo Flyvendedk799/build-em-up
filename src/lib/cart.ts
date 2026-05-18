@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { track } from "@/lib/analytics";
 
 export type CartItem = {
@@ -63,7 +63,8 @@ export const useCart = create<CartState>()(
     }),
     {
       name: "havelandet-cart",
-      partialize: (s) => ({ items: s.items }) as any,
+      storage: createJSONStorage(() => window.localStorage),
+      partialize: (s) => ({ items: s.items }),
     }
   )
 );
