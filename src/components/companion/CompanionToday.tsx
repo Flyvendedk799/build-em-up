@@ -1,7 +1,7 @@
 import { Bot, Camera, CheckCircle2, CloudRain, Droplets, Leaf, MapPin, Radio, Sparkles, ThermometerSun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Forecast } from "@/lib/wateringAI";
-import type { CareAction, CompanionPreferences } from "@/lib/companionTypes";
+import type { CareAction, CompanionPreferences, HealthScore } from "@/lib/companionTypes";
 
 type Garden = {
   id: string;
@@ -43,10 +43,13 @@ type Props = {
   devices: Device[];
   observations: Observation[];
   preferences: CompanionPreferences;
+  healthScore: HealthScore;
   onScan: () => void;
   onMap: () => void;
   onPlan: () => void;
   onDevices: () => void;
+  onRound: () => void;
+  onCoach: () => void;
   onCompleteAction: (id: string) => void;
 };
 
@@ -90,10 +93,13 @@ export default function CompanionToday({
   devices,
   observations,
   preferences,
+  healthScore,
   onScan,
   onMap,
   onPlan,
   onDevices,
+  onRound,
+  onCoach,
   onCompleteAction,
 }: Props) {
   const urgent = openActions.filter((a) => a.priority === "urgent" || a.priority === "high");
@@ -102,7 +108,7 @@ export default function CompanionToday({
   const onlineDevices = devices.filter((d) => d.status === "online" || d.status === "running").length;
   const recentPhotos = observations.filter((obs) => obs.image_url).slice(0, 4);
   const diagnoses = observations.filter((obs) => obs.kind === "diagnosis" || obs.kind === "bed_scan").length;
-  const readiness = clampScore(92 - urgent.length * 11 - openActions.length * 3 + onlineDevices * 2 + Math.min(8, recentPhotos.length * 2));
+  const readiness = clampScore((healthScore.score * 0.72) + 20 - urgent.length * 3 + onlineDevices * 2 + Math.min(8, recentPhotos.length * 2));
   const mapMemory = clampScore((zones.length ? 24 : 0) + Math.min(28, plantCount * 3) + Math.min(28, observations.length * 2) + Math.min(20, devices.length * 5));
 
   return (
@@ -115,6 +121,9 @@ export default function CompanionToday({
           <div className="companion-hero-actions">
             <Button onClick={onScan}>
               <Camera size={16} className="mr-1.5" /> Scan haven
+            </Button>
+            <Button variant="outline" onClick={onRound}>
+              <MapPin size={16} className="mr-1.5" /> Start havegang
             </Button>
             <Button variant="outline" onClick={onMap}>
               <MapPin size={16} className="mr-1.5" /> Se kort
@@ -159,6 +168,7 @@ export default function CompanionToday({
         <Metric icon={<CloudRain size={17} />} label="Sparet" value={`${savedL} L`} />
         <Metric icon={<Radio size={17} />} label="Smart have" value={`${onlineDevices}/${devices.length}`} hint={sensors.length ? `${sensors.length} sensorer` : "ingen sensorer"} />
         <Metric icon={<ThermometerSun size={17} />} label="Temperatur" value={forecast ? `${Math.round(forecast.temp_max)}°` : "-"} />
+        <Metric icon={<Sparkles size={17} />} label="Havesundhed" value={`${healthScore.score}/100`} hint={healthScore.primary_risk || healthScore.status} />
       </div>
 
       <section className="companion-guided-flow">
@@ -193,6 +203,14 @@ export default function CompanionToday({
           meta={`${onlineDevices}/${devices.length} online · ${diagnoses} helbredsspor`}
           active={preferences.automation_mode === "device_autopilot"}
           onClick={onDevices}
+        />
+        <GuidedStep
+          icon={<Bot size={17} />}
+          label="Coach"
+          title="Spørg din have"
+          meta={healthScore.explanation}
+          active={healthScore.status !== "good"}
+          onClick={onCoach}
         />
       </section>
 

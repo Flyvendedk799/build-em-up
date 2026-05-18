@@ -94,6 +94,43 @@ export type GrowthSnapshot = {
   anomaly_flags: string[];
 };
 
+export type HealthScore = {
+  score: number;
+  status: "good" | "watch" | "risk" | "critical";
+  factors: string[];
+  primary_risk: string | null;
+  explanation: string;
+};
+
+export type GardenRoundStep = {
+  zone_id: string;
+  status: "pending" | "active" | "done";
+  observations: string[];
+  completed_task_ids: string[];
+};
+
+export type TimelineEvent = {
+  id: string;
+  type: "photo" | "diagnosis" | "growth" | "harvest" | "watering" | "task" | "journal" | "note";
+  title: string;
+  subtitle: string;
+  image_url?: string | null;
+  created_at: string;
+  source_id: string;
+  payload?: Json;
+};
+
+export type ZoneInsight = {
+  title: string;
+  reason: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  action_kind: string;
+  confidence: number;
+  source: "weather" | "sensor" | "scan" | "season" | "task" | "growth";
+};
+
+export type ProblemResolutionState = "open" | "watching" | "improving" | "resolved";
+
 export type NormalizedScanResult = {
   title: string;
   severity: "low" | "medium" | "high";

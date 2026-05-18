@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BarChart3, CalendarDays, Camera, CheckCircle2, CloudSun, Droplets, Gauge, Leaf, MapPin, NotebookPen, PlugZap, Radio, ShieldCheck, Sprout, Users, XCircle } from "lucide-react";
+import { BarChart3, Bot, CalendarDays, Camera, CheckCircle2, CloudSun, Droplets, Footprints, Gauge, Leaf, MapPin, NotebookPen, PlugZap, Radio, ShieldCheck, Sprout, Users, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,18 @@ import { useActiveGarden } from "@/lib/activeGarden";
 import type { CompanionView, CareAction, CompanionPreferences as CompanionPreferencesState, MapAnchor } from "@/lib/companionTypes";
 import { readCompanionPreferences } from "@/lib/companionTypes";
 import { generateDeviceActions, generateWeatherActions } from "@/lib/companionActions";
+import { computeHealthScore, computePlantScores, computeZoneScores } from "@/lib/companionHealth";
+import { generateSeasonActions, generateZoneInsights } from "@/lib/companionInsights";
 import { fetchForecast, type Forecast, type Schedule, weekSummary } from "@/lib/wateringAI";
 import CompanionToday from "@/components/companion/CompanionToday";
 import GardenMap from "@/components/companion/GardenMap";
 import GardenCamera from "@/components/companion/GardenCamera";
 import CarePlan from "@/components/companion/CarePlan";
 import CompanionPreferences from "@/components/companion/CompanionPreferences";
+import GardenRound from "@/components/companion/GardenRound";
+import PlantTimeline from "@/components/companion/PlantTimeline";
+import GardenCoach from "@/components/companion/GardenCoach";
+import SeasonPlan from "@/components/companion/SeasonPlan";
 import MorningBriefing from "@/components/watering/MorningBriefing";
 import CalendarTimeline from "@/components/watering/CalendarTimeline";
 import JournalTab from "@/components/watering/JournalTab";
@@ -27,7 +33,7 @@ import CalendarTab from "@/components/watering/CalendarTab";
 import type { ZonePlant } from "@/components/watering/PlantChips";
 import "@/styles/companion.css";
 
-type View = CompanionView | "yearwheel" | "community";
+type View = CompanionView | "yearwheel" | "community" | "round" | "coach";
 type Garden = Tables<"gardens">;
 type Zone = Tables<"garden_zones">;
 type Plant = Tables<"user_plants"> & {
@@ -38,6 +44,9 @@ type Device = Tables<"devices">;
 type DeviceAction = Tables<"device_actions">;
 type DeviceReading = Tables<"device_readings">;
 type IntegrationConnection = Tables<"integration_connections">;
+type HealthLog = Tables<"plant_health_log">;
+type GrowthSnapshotRow = Tables<"plant_growth_snapshots">;
+type JournalRow = Tables<"garden_journal">;
 type Task = Tables<"task_log">;
 type EventRow = Tables<"watering_events">;
 type CatalogCalendar = {
@@ -52,6 +61,7 @@ type CatalogCalendar = {
 
 const PRIMARY: { key: View; label: string }[] = [
   { key: "today", label: "I dag" },
+  { key: "round", label: "Havegang" },
   { key: "map", label: "Kort" },
   { key: "scan", label: "Scan" },
   { key: "plan", label: "Plan" },
@@ -62,6 +72,7 @@ const SECONDARY: { key: View; label: string; icon: React.ElementType }[] = [
   { key: "water", label: "Vanding", icon: Droplets },
   { key: "journal", label: "Dagbog", icon: NotebookPen },
   { key: "devices", label: "Smart have", icon: Radio },
+  { key: "coach", label: "Coach", icon: Bot },
   { key: "yearwheel", label: "Årshjul", icon: CalendarDays },
   { key: "community", label: "Nabolag", icon: Users },
   { key: "insights", label: "Indsigt", icon: BarChart3 },
@@ -163,12 +174,18 @@ export default function GardenCompanion() {
   const [connections, setConnections] = useState<IntegrationConnection[]>([]);
   const [deviceReadings, setDeviceReadings] = useState<DeviceReading[]>([]);
   const [deviceActions, setDeviceActions] = useState<DeviceAction[]>([]);
+  const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
+  const [growthSnapshots, setGrowthSnapshots] = useState<GrowthSnapshotRow[]>([]);
+  const [journal, setJournal] = useState<JournalRow[]>([]);
   const [remoteSuggestions, setRemoteSuggestions] = useState<Omit<CareAction, "id">[]>([]);
   const [generatingActions, setGeneratingActions] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
+  const [scanPlantId, setScanPlantId] = useState<string | null>(null);
+  const [scanMode, setScanMode] = useState<"identify" | "diagnosis" | "growth" | "bed_scan" | "photo" | "harvest" | undefined>();
   const [catalogBySlug, setCatalogBySlug] = useState<Record<string, CatalogCalendar>>({});
 
   const setViewPersist = (next: View) => {
@@ -199,6 +216,9 @@ export default function GardenCompanion() {
       setConnections([]);
       setDeviceReadings([]);
       setDeviceActions([]);
+      setHealthLogs([]);
+      setGrowthSnapshots([]);
+      setJournal([]);
       setRemoteSuggestions([]);
       setSchedules([]);
       setEvents([]);
@@ -215,6 +235,9 @@ export default function GardenCompanion() {
       { data: connectionRows },
       { data: readingRows },
       { data: deviceActionRows },
+      { data: healthRows },
+      { data: growthRows },
+      { data: journalRows },
       { data: scheduleRows },
       { data: eventRows },
     ] = await Promise.all([
@@ -229,6 +252,9 @@ export default function GardenCompanion() {
       supabase.from("integration_connections").select("*").eq("garden_id", active.id).order("updated_at", { ascending: false }),
       supabase.from("device_readings").select("*").eq("garden_id", active.id).order("observed_at", { ascending: false }).limit(120),
       supabase.from("device_actions").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(60),
+      supabase.from("plant_health_log").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
+      supabase.from("plant_growth_snapshots").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
+      supabase.from("garden_journal").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
       supabase.from("watering_schedules").select("*").eq("user_id", user.id),
       supabase.from("watering_events").select("*").eq("user_id", user.id).order("scheduled_for", { ascending: false }).limit(250),
     ]);
@@ -241,6 +267,9 @@ export default function GardenCompanion() {
     setConnections((connectionRows ?? []) as IntegrationConnection[]);
     setDeviceReadings((readingRows ?? []) as DeviceReading[]);
     setDeviceActions((deviceActionRows ?? []) as DeviceAction[]);
+    setHealthLogs((healthRows ?? []) as HealthLog[]);
+    setGrowthSnapshots((growthRows ?? []) as GrowthSnapshotRow[]);
+    setJournal((journalRows ?? []) as JournalRow[]);
     setRemoteSuggestions([]);
     setSchedules((scheduleRows ?? []) as Schedule[]);
     setEvents((eventRows ?? []) as EventRow[]);
@@ -303,15 +332,53 @@ export default function GardenCompanion() {
 
   const summary = useMemo(() => weekSummary(schedules, zones, forecasts), [forecasts, schedules, zones]);
   const actions = useMemo(() => tasks.map(taskToAction), [tasks]);
+  const healthInput = useMemo(() => ({
+    zones,
+    plants,
+    observations,
+    tasks,
+    devices,
+    readings: deviceReadings,
+    healthLogs,
+    growthSnapshots,
+    forecasts,
+  }), [deviceReadings, devices, forecasts, growthSnapshots, healthLogs, observations, plants, tasks, zones]);
+  const gardenHealth = useMemo(() => computeHealthScore(healthInput), [healthInput]);
+  const zoneScores = useMemo(() => computeZoneScores(healthInput), [healthInput]);
+  const plantScores = useMemo(() => computePlantScores(healthInput), [healthInput]);
+  const zoneInsights = useMemo(() => Object.fromEntries(zones.map((zone) => [
+    zone.id,
+    generateZoneInsights({
+      zone,
+      healthScore: zoneScores[zone.id],
+      observations,
+      tasks,
+      devices,
+      readings: deviceReadings,
+      forecasts,
+    }),
+  ])), [deviceReadings, devices, forecasts, observations, tasks, zoneScores, zones]);
+  const seasonActions = useMemo(() => {
+    if (!garden) return [];
+    return generateSeasonActions({
+      gardenId: garden.id,
+      zones,
+      plants,
+      catalogBySlug,
+      existingTasks: tasks,
+    });
+  }, [catalogBySlug, garden, plants, tasks, zones]);
+  const selectedPlant = useMemo(() => selectedPlantId ? plants.find((plant) => plant.id === selectedPlantId) ?? null : null, [plants, selectedPlantId]);
   const suggestions = useMemo(() => {
     if (!garden) return [];
     const existingTitles = new Set(actions.filter((a) => a.status !== "done").map((a) => a.title));
     return [
       ...remoteSuggestions,
+      ...seasonActions,
       ...generateWeatherActions(garden.id, zones, forecasts),
       ...generateDeviceActions(garden.id, devices),
     ].filter((a) => !existingTitles.has(a.title));
-  }, [actions, devices, forecasts, garden, remoteSuggestions, zones]);
+  }, [actions, devices, forecasts, garden, remoteSuggestions, seasonActions, zones]);
 
   async function completeAction(id: string) {
     const { error } = await supabase.from("task_log").update({ done: true, done_at: new Date().toISOString() }).eq("id", id);
@@ -343,6 +410,80 @@ export default function GardenCompanion() {
     }
     setTasks((prev) => [...prev, data as Task]);
     toast.success("Tilføjet til plejeplanen");
+  }
+
+  async function createManySuggestions(nextActions: Omit<CareAction, "id">[]) {
+    if (!user || nextActions.length === 0) return;
+    const rows = nextActions.map((action) => actionToTaskInsert(user.id, action));
+    const { data, error } = await supabase.from("task_log").insert(rows).select();
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setTasks((prev) => [...prev, ...((data ?? []) as Task[])]);
+    toast.success(`${rows.length} opgaver tilføjet`);
+  }
+
+  function openScanForZone(zoneId: string, mode: typeof scanMode = "bed_scan") {
+    setSelectedZoneId(zoneId);
+    setScanPlantId(null);
+    setScanMode(mode);
+    setViewPersist("scan");
+  }
+
+  function openScanForPlant(plantId: string, mode: typeof scanMode = "growth") {
+    const plant = plants.find((item) => item.id === plantId);
+    setSelectedPlantId(plantId);
+    setSelectedZoneId(plant?.zone_id ?? null);
+    setScanPlantId(plantId);
+    setScanMode(mode);
+    setViewPersist("scan");
+  }
+
+  async function followUpIssue(state: "open" | "watching" | "improving" | "resolved") {
+    if (!user || !garden || !selectedPlantId) return;
+    const plant = plants.find((item) => item.id === selectedPlantId);
+    if (!plant) return;
+    if (state === "resolved") {
+      const { error } = await supabase.from("garden_observations").insert({
+        user_id: user.id,
+        garden_id: garden.id,
+        zone_id: plant.zone_id,
+        plant_id: plant.id,
+        kind: "diagnosis",
+        caption: "Problem markeret som løst",
+        anchor: { garden_id: garden.id, zone_id: plant.zone_id, plant_id: plant.id, accuracy: "manual" } as Json,
+        ai_result: { severity: "low", resolution_state: "resolved", summary: "Problem markeret som løst" } as Json,
+        confidence: 0.8,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      await supabase.from("task_log")
+        .update({ done: true, done_at: new Date().toISOString(), payload: { resolution_state: "resolved" } as Json })
+        .eq("plant_id", plant.id)
+        .in("kind", ["diagnose", "issue_resolution"]);
+      toast.success("Problemet er lukket");
+      await load();
+      return;
+    }
+
+    const title = state === "improving" ? "Følg bedring op" : "Følg sygdom eller skadedyr op";
+    await createSuggestion({
+      kind: "issue_resolution",
+      title,
+      reason: state === "improving" ? "Der er set bedring. Tag et kontrolfoto om få dage." : "Hold øje og tag et nyt foto for at lukke løkken.",
+      priority: state === "open" ? "high" : "normal",
+      due_at: new Date(Date.now() + 3 * 86400_000).toISOString(),
+      status: "open",
+      source: "scan",
+      confidence: 0.72,
+      garden_id: garden.id,
+      zone_id: plant.zone_id,
+      plant_id: plant.id,
+      payload: { resolution_state: state } as Json,
+    });
   }
 
   async function savePreferences(next: CompanionPreferencesState) {
@@ -485,15 +626,31 @@ export default function GardenCompanion() {
               devices={devices}
               observations={observations}
               preferences={preferences}
+              healthScore={gardenHealth}
               onScan={() => setViewPersist("scan")}
               onMap={() => setViewPersist("map")}
               onPlan={() => setViewPersist("plan")}
               onDevices={() => setViewPersist("devices")}
+              onRound={() => setViewPersist("round")}
+              onCoach={() => setViewPersist("coach")}
               onCompleteAction={completeAction}
             />
             <CompanionPreferences preferences={preferences} onChange={savePreferences} />
             <MorningBriefing userId={user.id} />
           </>
+        )}
+
+        {view === "round" && (
+          <GardenRound
+            userId={user.id}
+            garden={garden}
+            zones={zones}
+            observations={observations}
+            actions={actions}
+            onScanZone={openScanForZone}
+            onCompleteAction={completeAction}
+            onSaved={load}
+          />
         )}
 
         {view === "map" && (
@@ -503,8 +660,11 @@ export default function GardenCompanion() {
             plants={plants}
             observations={observations}
             devices={devices}
+            zoneScores={zoneScores}
+            zoneInsights={zoneInsights}
             selectedZoneId={selectedZoneId}
             onSelectZone={setSelectedZoneId}
+            onSelectPlant={setSelectedPlantId}
             onMovePlant={movePlant}
             onMoveObservation={moveObservation}
             onMoveDevice={moveDevice}
@@ -519,21 +679,26 @@ export default function GardenCompanion() {
             plants={plants}
             observations={observations}
             defaultZoneId={selectedZoneId}
+            defaultPlantId={scanPlantId}
+            defaultMode={scanMode}
             onSaved={load}
           />
         )}
 
         {view === "plan" && (
-          <CarePlan
-            actions={actions}
-            suggestions={suggestions}
-            zoneNames={zoneNames}
-            onComplete={completeAction}
-            onSnooze={snoozeAction}
-            onCreateSuggestion={createSuggestion}
-            onGenerateSuggestions={() => generateCompanionActions(false)}
-            generatingSuggestions={generatingActions}
-          />
+          <>
+            <SeasonPlan actions={seasonActions} onAdd={createSuggestion} onAddAll={() => createManySuggestions(seasonActions)} />
+            <CarePlan
+              actions={actions}
+              suggestions={suggestions}
+              zoneNames={zoneNames}
+              onComplete={completeAction}
+              onSnooze={snoozeAction}
+              onCreateSuggestion={createSuggestion}
+              onGenerateSuggestions={() => generateCompanionActions(false)}
+              generatingSuggestions={generatingActions}
+            />
+          </>
         )}
 
         <section className="companion-secondary">
@@ -551,7 +716,18 @@ export default function GardenCompanion() {
             ))}
           </div>
 
-          {view === "plants" && <PlantInventory plants={plants} zones={zones} onScan={() => setViewPersist("scan")} />}
+          {view === "plants" && (
+            <>
+              <PlantInventory
+                plants={plants}
+                zones={zones}
+                plantScores={plantScores}
+                selectedPlantId={selectedPlantId}
+                onSelectPlant={setSelectedPlantId}
+                onScan={() => setViewPersist("scan")}
+              />
+            </>
+          )}
           {view === "water" && (
             <CalendarTimeline
               schedules={schedules}
@@ -578,10 +754,39 @@ export default function GardenCompanion() {
               <IoTTab gardenId={garden.id} zones={zones} />
             </>
           )}
+          {view === "coach" && (
+            <GardenCoach
+              garden={garden}
+              zones={zones}
+              plants={plants}
+              observations={observations}
+              openActions={actions.filter((action) => action.status === "open")}
+              preferences={preferences}
+              selectedZoneId={selectedZoneId}
+              selectedPlantId={selectedPlantId}
+              zoneInsights={zoneInsights}
+              gardenHealth={gardenHealth}
+            />
+          )}
           {view === "yearwheel" && <CalendarTab gardenId={garden.id} zones={zones} plantsByZone={plantsByZone} catalogBySlug={catalogBySlug} />}
           {view === "community" && <NeighborsTab />}
           {view === "insights" && <InsightsTab events={events} zones={zones} />}
         </section>
+
+        {selectedPlant && (
+          <PlantTimeline
+            plant={selectedPlant}
+            zoneName={zones.find((zone) => zone.id === selectedPlant.zone_id)?.name}
+            observations={observations}
+            healthLogs={healthLogs}
+            growthSnapshots={growthSnapshots}
+            tasks={tasks}
+            journal={journal}
+            healthScore={plantScores[selectedPlant.id]}
+            onScan={() => openScanForPlant(selectedPlant.id)}
+            onFollowUp={followUpIssue}
+          />
+        )}
       </div>
       <SiteFooter />
     </>
@@ -846,7 +1051,21 @@ function SmartGardenPanel({
   );
 }
 
-function PlantInventory({ plants, zones, onScan }: { plants: Plant[]; zones: Zone[]; onScan: () => void }) {
+function PlantInventory({
+  plants,
+  zones,
+  plantScores,
+  selectedPlantId,
+  onSelectPlant,
+  onScan,
+}: {
+  plants: Plant[];
+  zones: Zone[];
+  plantScores: Record<string, ReturnType<typeof computeHealthScore>>;
+  selectedPlantId: string | null;
+  onSelectPlant: (plantId: string) => void;
+  onScan: () => void;
+}) {
   if (plants.length === 0) {
     return (
       <div className="companion-band companion-empty">
@@ -859,13 +1078,13 @@ function PlantInventory({ plants, zones, onScan }: { plants: Plant[]; zones: Zon
   return (
     <div className="companion-plant-grid">
       {plants.map((plant) => (
-        <article key={plant.id} className="companion-plant-card">
+        <button key={plant.id} className={`companion-plant-card ${selectedPlantId === plant.id ? "active" : ""}`} onClick={() => onSelectPlant(plant.id)}>
           {plant.image_url ? <img src={plant.image_url} alt="" /> : <div className="companion-plant-fallback"><Sprout size={20} /></div>}
           <div>
             <h3>{plant.custom_name || plant.plants_catalog?.name_da || plant.plant_slug || "Plante"}</h3>
-            <p>{zones.find((z) => z.id === plant.zone_id)?.name ?? "Ikke placeret"} · {plant.health_status || "ukendt helbred"}</p>
+            <p>{zones.find((z) => z.id === plant.zone_id)?.name ?? "Ikke placeret"} · {plant.health_status || "ukendt helbred"} · {plantScores[plant.id]?.score ?? "-"} / 100</p>
           </div>
-        </article>
+        </button>
       ))}
     </div>
   );

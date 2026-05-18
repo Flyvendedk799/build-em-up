@@ -28,6 +28,8 @@ type Props = {
   plants: Plant[];
   observations: Observation[];
   defaultZoneId?: string | null;
+  defaultPlantId?: string | null;
+  defaultMode?: ScanMode;
   onSaved: () => void;
 };
 
@@ -74,7 +76,7 @@ function taskRowsFromActions(userId: string, actions: Omit<CareAction, "id">[]) 
   }));
 }
 
-export default function GardenCamera({ userId, garden, zones, plants, observations, defaultZoneId, onSaved }: Props) {
+export default function GardenCamera({ userId, garden, zones, plants, observations, defaultZoneId, defaultPlantId, defaultMode, onSaved }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const camRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<ScanMode>("identify");
@@ -91,6 +93,14 @@ export default function GardenCamera({ userId, garden, zones, plants, observatio
   useEffect(() => {
     setZoneId(defaultZoneId || zones[0]?.id || "none");
   }, [defaultZoneId, zones]);
+
+  useEffect(() => {
+    if (defaultPlantId) setPlantId(defaultPlantId);
+  }, [defaultPlantId]);
+
+  useEffect(() => {
+    if (defaultMode) setMode(defaultMode);
+  }, [defaultMode]);
 
   const selectedZone = zoneId === "none" ? null : zones.find((z) => z.id === zoneId) ?? null;
   const selectedPlant = plantId === "none" ? null : plants.find((p) => p.id === plantId) ?? null;

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Camera, Droplets, Leaf, MapPin, Move, Radio, Sprout } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
-import { clampNormalizedPoint } from "@/lib/companionTypes";
+import { clampNormalizedPoint, type HealthScore, type ZoneInsight } from "@/lib/companionTypes";
 
 type Garden = Pick<Tables<"gardens">, "id" | "name" | "thumbnail_url" | "area_m2">;
 type Zone = Pick<Tables<"garden_zones">, "id" | "name" | "type" | "area_m2" | "soil" | "sun_exposure">;
@@ -22,8 +22,11 @@ type Props = {
   plants: Plant[];
   observations: Observation[];
   devices: Device[];
+  zoneScores?: Record<string, HealthScore>;
+  zoneInsights?: Record<string, ZoneInsight[]>;
   selectedZoneId?: string | null;
   onSelectZone: (zoneId: string | null) => void;
+  onSelectPlant?: (plantId: string) => void;
   onMovePlant: (id: string, x: number, y: number) => void;
   onMoveObservation: (id: string, x: number, y: number) => void;
   onMoveDevice: (id: string, x: number, y: number) => void;
@@ -64,8 +67,11 @@ export default function GardenMap({
   plants,
   observations,
   devices,
+  zoneScores = {},
+  zoneInsights = {},
   selectedZoneId,
   onSelectZone,
+  onSelectPlant,
   onMovePlant,
   onMoveObservation,
   onMoveDevice,
@@ -173,6 +179,8 @@ export default function GardenMap({
     : devices;
   const latestDiagnosis = zoneObservations.find((obs) => obs.kind === "diagnosis" || obs.kind === "bed_scan");
   const latestGrowth = zoneObservations.find((obs) => obs.kind === "growth");
+  const selectedScore = selectedZoneId ? zoneScores[selectedZoneId] : null;
+  const selectedInsights = selectedZoneId ? zoneInsights[selectedZoneId] ?? [] : [];
 
   return (
     <div className="companion-map-shell">
@@ -233,6 +241,7 @@ export default function GardenMap({
               className={`companion-pin companion-pin--${pin.tone} ${isDragging ? "dragging" : ""}`}
               style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
               onPointerDown={(e) => startDrag(pin, e)}
+              onClick={() => pin.type === "plant" && onSelectPlant?.(pin.id)}
               title={`${pin.label} · træk for at flytte`}
             >
               {pin.type === "plant" && <Sprout size={15} />}
@@ -273,6 +282,12 @@ export default function GardenMap({
         <div className="companion-memory-grid">
           <MemoryCard
             icon={<Leaf size={15} />}
+            title="Sundhed"
+            value={selectedScore ? `${selectedScore.score}/100 · ${selectedScore.status}` : "Vælg en zone"}
+            meta={selectedScore?.explanation || "Scoren beregnes fra scans, opgaver og sensorer"}
+          />
+          <MemoryCard
+            icon={<Leaf size={15} />}
             title="Seneste diagnose"
             value={latestDiagnosis?.caption || resultTitle(latestDiagnosis?.ai_result) || "Ingen diagnose endnu"}
             meta={latestDiagnosis ? dateLabel(latestDiagnosis.created_at) : "Scan en plante eller et bed"}
@@ -290,6 +305,18 @@ export default function GardenMap({
             meta={zoneDevices[0]?.status || "Tilføj sensor eller ventil"}
           />
         </div>
+
+        {selectedInsights.length > 0 && (
+          <div className="companion-zone-insights">
+            {selectedInsights.map((insight) => (
+              <article key={`${insight.action_kind}-${insight.title}`}>
+                <span>{insight.priority}</span>
+                <strong>{insight.title}</strong>
+                <p>{insight.reason}</p>
+              </article>
+            ))}
+          </div>
+        )}
 
         {zoneObservations.length > 0 && (
           <div className="companion-memory-timeline">

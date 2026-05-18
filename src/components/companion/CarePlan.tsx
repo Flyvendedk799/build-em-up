@@ -35,6 +35,8 @@ export default function CarePlan({ actions, suggestions, zoneNames, onComplete, 
     const order = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
     return order[a.priority] - order[b.priority];
   });
+  const seasonal = open.filter((action) => action.source === "season").length;
+  const issues = open.filter((action) => action.kind === "diagnose" || action.kind === "issue_resolution" || action.kind === "growth_anomaly").length;
 
   return (
     <div className="companion-plan">
@@ -63,6 +65,12 @@ export default function CarePlan({ actions, suggestions, zoneNames, onComplete, 
             Ingen åbne opgaver. Scan et bed eller tilføj planter for at få en skarpere plan.
           </div>
         ) : (
+          <>
+          <div className="companion-plan-groups">
+            <span>{seasonal} sæson</span>
+            <span>{issues} problemløkker</span>
+            <span>{open.length - seasonal - issues} øvrige</span>
+          </div>
           <div className="companion-task-grid">
             {open.map((action) => (
               <article key={action.id} className={`companion-task companion-task--${action.priority}`}>
@@ -86,6 +94,7 @@ export default function CarePlan({ actions, suggestions, zoneNames, onComplete, 
               </article>
             ))}
           </div>
+          </>
         )}
       </section>
 
