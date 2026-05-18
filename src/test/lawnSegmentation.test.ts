@@ -101,6 +101,33 @@ describe("lawnSegmentation", () => {
     expect(["strict", "ultra"]).toContain(selection.result.diagnostics.selectedCandidate);
   });
 
+  it("keeps tiny extractions low-confidence", () => {
+    const image = makeImageData(96, 96, [156, 156, 150]);
+    rect(image, 44, 44, 50, 50, [70, 136, 68]);
+
+    const result = segmentLawnImageData(image, crop([47, 47]), [], {
+      highPrecision: true,
+      createMaskPreview: false,
+    });
+
+    expect(result.confidence).toBeLessThan(0.4);
+    expect(result.needsReview).toBe(true);
+  });
+
+  it("keeps an off-color positive refinement from broadening the seed model", () => {
+    const image = makeImageData(96, 96, [156, 156, 150]);
+    rect(image, 12, 12, 52, 82, [70, 136, 68]);
+    rect(image, 56, 12, 86, 82, [126, 120, 108]);
+
+    const result = segmentLawnImageData(image, crop([30, 40]), [{ kind: "positive", px: [70, 45] }], {
+      highPrecision: true,
+      createMaskPreview: false,
+    });
+
+    expect(pointInRing(pixelToLngLat([30, 40], [0, 0, 96, 96], 96, 96), result.polygon)).toBe(true);
+    expect(pointInRing(pixelToLngLat([70, 45], [0, 0, 96, 96], 96, 96), result.polygon)).toBe(false);
+  });
+
   it("turns negative refinement clicks into remove constraints", () => {
     const image = makeImageData(96, 96, [155, 155, 150]);
     rect(image, 12, 12, 84, 84, [73, 135, 66]);

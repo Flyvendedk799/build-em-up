@@ -265,42 +265,71 @@ function buildNegativeSeedMask(width: number, height: number, seeds: PixelSeed[]
   return negative;
 }
 
-function sampleSeedModel(imageData: ImageData, seeds: PixelSeed[]) {
-  const { width, height, data } = imageData;
-  const samples: Array<[number, number, number, number]> = [];
-  for (const seed of seeds) {
-    if (seed.kind !== "positive") continue;
-    const sx = Math.round(seed.px[0]);
-    const sy = Math.round(seed.px[1]);
-    for (let dy = -5; dy <= 5; dy++) {
-      for (let dx = -5; dx <= 5; dx++) {
-        if (dx * dx + dy * dy > 25) continue;
-        const x = sx + dx;
-        const y = sy + dy;
-        if (x < 0 || y < 0 || x >= width || y >= height) continue;
-        const i = (y * width + x) * 4;
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        const sum = r + g + b + 1;
-        const exg = (2 * g - r - b) / 255;
-        samples.push([r / sum, g / sum, b / sum, exg]);
-      }
-    }
-  }
-
-  if (!samples.length) return { mean: [0.32, 0.39, 0.29, 0.12], sigma: 0.08 };
+function meanSample(samples: Array<[number, number, number, number]>) {
   const mean = [0, 0, 0, 0];
+  if (!samples.length) return mean;
   for (const sample of samples) {
     for (let i = 0; i < 4; i++) mean[i] += sample[i];
   }
   for (let i = 0; i < 4; i++) mean[i] /= samples.length;
+  return mean;
+}
+
+function sampleDistance(a: number[], b: number[]) {
+  return Math.sqrt(
+    (a[0] - b[0]) ** 2
+    + (a[1] - b[1]) ** 2
+    + (a[2] - b[2]) ** 2
+    + ((a[3] - b[3]) * 0.65) ** 2,
+  );
+}
+
+function samplesForSeed(imageData: ImageData, seed: PixelSeed) {
+  const { width, height, data } = imageData;
+  const samples: Array<[number, number, number, number]> = [];
+  const sx = Math.round(seed.px[0]);
+  const sy = Math.round(seed.px[1]);
+  for (let dy = -5; dy <= 5; dy++) {
+    for (let dx = -5; dx <= 5; dx++) {
+      if (dx * dx + dy * dy > 25) continue;
+      const x = sx + dx;
+      const y = sy + dy;
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const sum = r + g + b + 1;
+      const exg = (2 * g - r - b) / 255;
+      samples.push([r / sum, g / sum, b / sum, exg]);
+    }
+  }
+  return samples;
+}
+
+function sampleSeedModel(imageData: ImageData, seeds: PixelSeed[]) {
+  const samples: Array<[number, number, number, number]> = [];
+  const positiveSeeds = seeds.filter((seed) => seed.kind === "positive");
+  const anchorSamples = positiveSeeds[0] ? samplesForSeed(imageData, positiveSeeds[0]) : [];
+  const anchorMean = meanSample(anchorSamples);
+  samples.push(...anchorSamples);
+
+  for (const seed of positiveSeeds.slice(1)) {
+    const nextSamples = samplesForSeed(imageData, seed);
+    const nextMean = meanSample(nextSamples);
+    const compatibleColor = sampleDistance(anchorMean, nextMean) <= 0.115;
+    const stillVegetation = nextMean[3] > anchorMean[3] - 0.08 && nextMean[1] > anchorMean[1] - 0.035;
+    if (compatibleColor || stillVegetation) samples.push(...nextSamples);
+  }
+
+  if (!samples.length) return { mean: [0.32, 0.39, 0.29, 0.12], sigma: 0.08 };
+  const mean = meanSample(samples);
   let variance = 0;
   for (const sample of samples) {
     variance += sample.reduce((acc, value, i) => acc + (value - mean[i]) ** 2, 0);
   }
   variance /= Math.max(1, samples.length * 4);
-  return { mean, sigma: clamp(Math.sqrt(variance) * 2.7 + 0.035, 0.05, 0.16) };
+  return { mean, sigma: clamp(Math.sqrt(variance) * 2.35 + 0.035, 0.05, 0.13) };
 }
 
 function buildFeatureMaps(
@@ -802,9 +831,13 @@ export function segmentLawnImageData(
   const outerRaw = positiveContours[0];
   const outerArea = Math.abs(signedAreaPx(outerRaw));
   const simplifyPx = clamp((strictness === "ultra" ? 0.18 : options.highPrecision ? 0.28 : 0.45) / Math.max(0.035, metadata.metersPerPx), 1.1, strictness === "ultra" ? 3.2 : options.highPrecision ? 4 : 7);
-  let outer = simplifyClosedRing(outerRaw, simplifyPx);
-  outer = snapRingToEdges(outer, maps.edge, metadata.width, metadata.height, strictness === "ultra" ? 1 : options.highPrecision ? 2 : 3);
-  outer = simplifyClosedRing(outer, Math.max(1.1, simplifyPx * 0.45));
+  const baseOuter = simplifyClosedRing(outerRaw, simplifyPx);
+  const snappedOuter = simplifyClosedRing(
+    snapRingToEdges(baseOuter, maps.edge, metadata.width, metadata.height, strictness === "ultra" ? 1 : options.highPrecision ? 2 : 3),
+    Math.max(1.1, simplifyPx * 0.45),
+  );
+  const repairedOuter = simplifyClosedRing(baseOuter, Math.max(1.3, simplifyPx * 1.35));
+  const outer = hasSelfIntersection(snappedOuter) && !hasSelfIntersection(repairedOuter) ? repairedOuter : snappedOuter;
 
   const holes = contours
     .filter((ring) => signedAreaPx(ring) < 0 && Math.abs(signedAreaPx(ring)) > Math.max(48, outerArea * 0.006))
@@ -847,10 +880,13 @@ export function segmentLawnImageData(
     - (warnings.includes("click_outside_polygon") ? 0.3 : 0)
     - (warnings.includes("self_intersection") ? 0.4 : 0);
   if (metadata.imagerySource === "mapbox") confidence -= 0.05;
-  const blockingWarnings = new Set(["self_intersection", "area_too_small", "area_too_large", "click_outside_polygon", "parcel_leak", "hardscape_heavy_mask"]);
-  const hasBlockingWarning = warnings.some((warning) => blockingWarnings.has(warning));
+  const hasBlockingWarning = warnings.some(isBlockingLawnSegmentationWarning);
   if (options.highPrecision && !hasBlockingWarning && outer.length >= 4) {
     confidence = Math.max(confidence, strictness === "ultra" ? 0.42 : 0.4);
+  }
+  if (hasBlockingWarning) {
+    const cap = warnings.includes("area_too_small") ? 0.34 : warnings.includes("self_intersection") ? 0.39 : 0.44;
+    confidence = Math.min(confidence, cap);
   }
   confidence = clamp(confidence, 0, 0.98);
 

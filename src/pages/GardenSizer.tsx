@@ -13,6 +13,7 @@ import {
   buildSegmentationCacheKey,
   isBlockingLawnSegmentationWarning,
   readAcceptedSegmentationCache,
+  scoreLawnSegmentationResult,
   segmentLawnFromCrop,
   writeAcceptedSegmentationCache,
   type LawnCropPayload,
@@ -712,6 +713,17 @@ export default function GardenSizer() {
     return !result.diagnostics.warnings.some(isBlockingLawnSegmentationWarning);
   }
 
+  function shouldRejectRefinedWandResult(previous: LawnSegmentationResult | null, next: LawnSegmentationResult) {
+    if (!previous?.polygon?.length || !next.polygon.length) return false;
+    const previousBlocking = previous.diagnostics.warnings.some(isBlockingLawnSegmentationWarning);
+    const nextBlocking = next.diagnostics.warnings.some(isBlockingLawnSegmentationWarning);
+    if (!previousBlocking && nextBlocking) return true;
+    if (next.confidence < Math.max(0.4, previous.confidence - 0.22)) return true;
+    if (scoreLawnSegmentationResult(next) < scoreLawnSegmentationResult(previous) - 0.35) return true;
+    const areaGrowth = next.diagnostics.areaM2 / Math.max(1, previous.diagnostics.areaM2);
+    return areaGrowth > 1.45 && next.diagnostics.warnings.some((warning) => warning === "self_intersection" || warning === "touches_crop_edge");
+  }
+
   async function setWandSegmentationResult(crop: LawnCropPayload, seeds: SegmentationSeed[], result: LawnSegmentationResult, cached = false) {
     if (!result.polygon.length) {
       setWandPreview(null);
@@ -743,7 +755,7 @@ export default function GardenSizer() {
     }
   }
 
-  async function recomputeWandSegmentation(crop: LawnCropPayload, seeds: SegmentationSeed[], opts: { highPrecision?: boolean; cached?: boolean; strictness?: "normal" | "strict" | "ultra" } = {}) {
+  async function computeWandSegmentation(crop: LawnCropPayload, seeds: SegmentationSeed[], opts: { highPrecision?: boolean; strictness?: "normal" | "strict" | "ultra" } = {}) {
     const highPrecision = opts.highPrecision ?? true;
     setWandLoading(true);
     setWandStage(opts.strictness === "ultra" ? "Tegner kant" : highPrecision ? "Tegner kant" : "Finder græs");
@@ -762,10 +774,16 @@ export default function GardenSizer() {
         candidateCount: result.diagnostics.candidateCount,
       });
     }
+    return result;
+  }
+
+  async function recomputeWandSegmentation(crop: LawnCropPayload, seeds: SegmentationSeed[], opts: { highPrecision?: boolean; cached?: boolean; strictness?: "normal" | "strict" | "ultra" } = {}) {
+    const result = await computeWandSegmentation(crop, seeds, opts);
     setWandStage("Tegner kant");
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await setWandSegmentationResult(crop, seeds, result, !!opts.cached);
     setWandLoading(false);
+    return result;
   }
 
   async function runMagicWand(click: LngLat) {
@@ -824,10 +842,25 @@ export default function GardenSizer() {
       ...s.wandSeeds,
       { kind: reviewMode === "add" ? "positive" : "negative", lngLat: click },
     ];
-    logHavemaalerSegmentationEvent("havemaaler_wand_refine", s.wandCrop, s.wandPreview, nextSeeds, { action: reviewMode });
-    setWandSeeds(nextSeeds);
+    const previousResult = s.wandPreview;
+    const previousSeeds = s.wandSeeds;
+    logHavemaalerSegmentationEvent("havemaaler_wand_refine", s.wandCrop, previousResult, nextSeeds, { action: reviewMode });
     try {
-      await recomputeWandSegmentation(s.wandCrop, nextSeeds);
+      const result = await computeWandSegmentation(s.wandCrop, nextSeeds);
+      if (shouldRejectRefinedWandResult(previousResult, result)) {
+        logHavemaalerSegmentationEvent("havemaaler_wand_refine", s.wandCrop, result, nextSeeds, { action: `${reviewMode}_rejected` });
+        setWandSeeds(previousSeeds);
+        setWandStage("Klar til tjek");
+        setWandLoading(false);
+        toast("Det klik gjorde kanten mere usikker", {
+          description: "Prøv et klik tættere på den manglende kant, eller brug manuel redigering.",
+        });
+        return;
+      }
+      setWandStage("Tegner kant");
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await setWandSegmentationResult(s.wandCrop, nextSeeds, result);
+      setWandLoading(false);
     } catch {
       toast.error("Kunne ikke opdatere forslaget — prøv et andet klik");
       setWandLoading(false);
