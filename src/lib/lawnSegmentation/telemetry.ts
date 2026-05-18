@@ -116,9 +116,9 @@ export function logHavemaalerSegmentationEvent(
 
   // Best-effort production telemetry. This intentionally stores no raw imagery,
   // address, or exact coordinates; crop_hash lets us group repeated failures.
-  supabase
-    .from("havemaaler_segmentation_events" as any)
-    .insert(payload as any)
+  Promise.resolve(
+    supabase.from("havemaaler_segmentation_events" as any).insert(payload as any)
+  )
     .then(({ error }) => {
       if (error && (import.meta as any).env?.DEV) {
         // eslint-disable-next-line no-console
