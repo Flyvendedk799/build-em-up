@@ -27,6 +27,25 @@ export type {
 type SegmentationStrictness = NonNullable<SegmentationOptions["strictness"]>;
 
 export const LAWN_SEGMENTATION_VERSION = "lawn-cv-v2";
+const BLOCKING_WARNINGS = new Set([
+  "self_intersection",
+  "area_too_small",
+  "area_too_large",
+  "click_outside_polygon",
+  "parcel_leak",
+  "hardscape_heavy_mask",
+]);
+
+export type LawnSegmentationCandidate = {
+  strictness: SegmentationStrictness;
+  score: number;
+  result: LawnSegmentationResult;
+};
+
+export type LawnSegmentationCandidateSelection = {
+  result: LawnSegmentationResult;
+  candidates: LawnSegmentationCandidate[];
+};
 
 type FeatureMaps = {
   grass: Float32Array;
@@ -49,6 +68,32 @@ const NEIGHBORS_8 = [
 
 function strictnessFor(options: SegmentationOptions): SegmentationStrictness {
   return options.strictness ?? (options.highPrecision ? "strict" : "normal");
+}
+
+export function isBlockingLawnSegmentationWarning(warning: string) {
+  return BLOCKING_WARNINGS.has(warning);
+}
+
+export function scoreLawnSegmentationResult(result: LawnSegmentationResult) {
+  if (!result.polygon.length) return -Infinity;
+  const warnings = result.diagnostics.warnings;
+  const blocking = warnings.filter(isBlockingLawnSegmentationWarning).length;
+  const complexityPenalty = Math.max(0, result.diagnostics.simplifiedPoints - 56) * 0.005;
+  const giantAreaPenalty = Math.max(0, result.diagnostics.areaM2 - 900) / 9000;
+  const tinyAreaPenalty = result.diagnostics.areaM2 > 0 && result.diagnostics.areaM2 < 18 ? 0.12 : 0;
+  return result.confidence
+    - blocking * 0.6
+    - (warnings.includes("touches_crop_edge") ? 0.18 : 0)
+    - result.diagnostics.hardscapeLeakage * 0.55
+    - complexityPenalty
+    - giantAreaPenalty
+    - tinyAreaPenalty;
+}
+
+function candidatePlan(options: SegmentationOptions): SegmentationStrictness[] {
+  if (options.strictness) return [options.strictness];
+  if (options.highPrecision === false) return ["normal"];
+  return ["strict", "ultra"];
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -836,20 +881,69 @@ export function segmentLawnImageData(
   };
 }
 
+export function selectLawnSegmentationCandidate(candidates: LawnSegmentationCandidate[]): LawnSegmentationCandidateSelection {
+  if (!candidates.length) throw new Error("No lawn segmentation candidates");
+  const selected = candidates.reduce((best, candidate) => (
+    candidate.score > best.score ? candidate : best
+  ), candidates[0]);
+  const candidateScores = candidates.map((candidate) => ({
+    strictness: candidate.strictness,
+    score: Number.isFinite(candidate.score) ? Number(candidate.score.toFixed(4)) : -999,
+    confidence: Number(candidate.result.confidence.toFixed(4)),
+    areaM2: Number(candidate.result.diagnostics.areaM2.toFixed(2)),
+    hardscapeLeakage: Number(candidate.result.diagnostics.hardscapeLeakage.toFixed(4)),
+    warnings: candidate.result.diagnostics.warnings,
+  }));
+  return {
+    candidates,
+    result: {
+      ...selected.result,
+      diagnostics: {
+        ...selected.result.diagnostics,
+        selectedCandidate: selected.strictness,
+        candidateCount: candidates.length,
+        candidateScores,
+        recoveredBy: candidates.length > 1 && selected.strictness === "ultra" ? "ultra-strict" : selected.result.diagnostics.recoveredBy,
+      },
+    },
+  };
+}
+
+export function segmentLawnImageDataCandidates(
+  imageData: ImageData,
+  crop: Omit<LawnCropMetadata, "width" | "height"> & Partial<Pick<LawnCropMetadata, "width" | "height">>,
+  seeds: SegmentationSeed[] = [],
+  options: SegmentationOptions = {},
+): LawnSegmentationCandidateSelection {
+  const candidates = candidatePlan(options).map((strictness) => {
+    const result = segmentLawnImageData(imageData, crop, seeds, {
+      ...options,
+      strictness,
+      highPrecision: strictness !== "normal",
+    });
+    return {
+      strictness,
+      result,
+      score: scoreLawnSegmentationResult(result),
+    };
+  });
+  return selectLawnSegmentationCandidate(candidates);
+}
+
 export async function segmentLawnFromCrop(
   crop: LawnCropPayload,
   seeds: SegmentationSeed[] = [],
   options: SegmentationOptions = {},
 ): Promise<LawnSegmentationResult> {
   const imageData = await decodeImageBase64(crop.imageBase64);
-  return segmentLawnImageData(imageData, {
+  return segmentLawnImageDataCandidates(imageData, {
     bbox: crop.bbox,
     clickPx: crop.clickPx,
     metersPerPx: crop.metersPerPx,
     parcelPx: crop.parcelPx,
     imagerySource: crop.imagerySource,
     diagnostics: crop.diagnostics,
-  }, seeds, options);
+  }, seeds, options).result;
 }
 
 function hashString(input: string): string {

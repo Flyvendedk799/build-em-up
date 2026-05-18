@@ -11,13 +11,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { unionRings, subtractRings, pixelDistance } from "@/lib/polygonOps";
 import {
   buildSegmentationCacheKey,
+  isBlockingLawnSegmentationWarning,
   readAcceptedSegmentationCache,
   segmentLawnFromCrop,
   writeAcceptedSegmentationCache,
   type LawnCropPayload,
   type LawnSegmentationResult,
+  type SegmentationOptions,
   type SegmentationSeed,
 } from "@/lib/lawnSegmentation";
+import { logHavemaalerSegmentationEvent } from "@/lib/lawnSegmentation/telemetry";
 import PinpointSequence from "@/components/havemaaler/PinpointSequence";
 
 type Suggestion = { id: string; place_name: string; center: [number, number]; text: string; source?: "dawa" | "mapbox" };
@@ -692,6 +695,10 @@ export default function GardenSizer() {
   function showWandFailure(data: any, response?: Response) {
     const code = String(data?.error || "");
     const msg = String(data?.detail || data?.error || response?.statusText || "");
+    logHavemaalerSegmentationEvent("havemaaler_wand_failure", null, null, [], {
+      errorCode: code || String(response?.status ?? "unknown"),
+      errorDetail: msg,
+    });
     if (code === "outside_parcel") toast.error("Klik inden for den markerede matrikel");
     else if (code === "imagery_fetch_failed") toast.error("Kunne ikke hente billede — prøv igen om lidt, eller tegn manuelt");
     else if (code === "invalid_request") toast.error("Klikket kunne ikke bruges — prøv igen på selve plænen");
@@ -702,26 +709,7 @@ export default function GardenSizer() {
   function canAcceptWandResult(result: LawnSegmentationResult | null) {
     if (!result?.polygon?.length) return false;
     if (result.confidence < 0.4) return false;
-    const rejectWarnings = new Set(["self_intersection", "area_too_small", "area_too_large", "click_outside_polygon", "parcel_leak", "hardscape_heavy_mask"]);
-    return !result.diagnostics.warnings.some((warning) => rejectWarnings.has(warning));
-  }
-
-  function wandResultScore(result: LawnSegmentationResult) {
-    if (!result.polygon.length) return -Infinity;
-    const warnings = result.diagnostics.warnings;
-    const blocking = warnings.filter((warning) => ["self_intersection", "area_too_small", "area_too_large", "click_outside_polygon", "parcel_leak", "hardscape_heavy_mask"].includes(warning)).length;
-    return result.confidence
-      - blocking * 0.6
-      - (warnings.includes("touches_crop_edge") ? 0.18 : 0)
-      - result.diagnostics.hardscapeLeakage * 0.45
-      - Math.max(0, result.diagnostics.areaM2 - 900) / 9000;
-  }
-
-  function shouldTryUltraStrict(result: LawnSegmentationResult) {
-    return result.confidence < 0.4
-      || result.diagnostics.warnings.includes("touches_crop_edge")
-      || result.diagnostics.hardscapeLeakage > 0.08
-      || result.diagnostics.simplifiedPoints > 70;
+    return !result.diagnostics.warnings.some(isBlockingLawnSegmentationWarning);
   }
 
   async function setWandSegmentationResult(crop: LawnCropPayload, seeds: SegmentationSeed[], result: LawnSegmentationResult, cached = false) {
@@ -738,6 +726,10 @@ export default function GardenSizer() {
     setWandConfidence(result.confidence);
     setWandBbox(crop.bbox);
     setWandStage("Klar til tjek");
+    logHavemaalerSegmentationEvent("havemaaler_wand_result", crop, result, seeds, {
+      cached,
+      candidateCount: result.diagnostics.candidateCount,
+    });
     const conf = Math.round(result.confidence * 100);
     const providerNote = crop.imagerySource === "mapbox" ? "Ortofoto fejlede, så Mapbox blev brugt." : undefined;
     if (result.needsReview) {
@@ -756,22 +748,19 @@ export default function GardenSizer() {
     setWandLoading(true);
     setWandStage(opts.strictness === "ultra" ? "Tegner kant" : highPrecision ? "Tegner kant" : "Finder græs");
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    let result = await segmentLawnFromCrop(crop, seeds, {
+    const segmentationOptions: SegmentationOptions = {
       highPrecision,
-      strictness: opts.strictness ?? (highPrecision ? "strict" : "normal"),
       createMaskPreview: true,
-    });
-    if (highPrecision && opts.strictness !== "ultra" && shouldTryUltraStrict(result)) {
-      setWandStage("Tegner kant");
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      const ultra = await segmentLawnFromCrop(crop, seeds, {
-        highPrecision: true,
-        strictness: "ultra",
-        createMaskPreview: true,
+    };
+    if (opts.strictness || !highPrecision) {
+      segmentationOptions.strictness = opts.strictness ?? "normal";
+    }
+    const result = await segmentLawnFromCrop(crop, seeds, segmentationOptions);
+    if (result.diagnostics.recoveredBy === "ultra-strict") {
+      logHavemaalerSegmentationEvent("havemaaler_wand_retry", crop, result, seeds, {
+        action: "auto_ultra_strict_selected",
+        candidateCount: result.diagnostics.candidateCount,
       });
-      if (wandResultScore(ultra) >= wandResultScore(result) || result.confidence < 0.4) {
-        result = { ...ultra, diagnostics: { ...ultra.diagnostics, recoveredBy: "ultra-strict" } };
-      }
     }
     setWandStage("Tegner kant");
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -835,6 +824,7 @@ export default function GardenSizer() {
       ...s.wandSeeds,
       { kind: reviewMode === "add" ? "positive" : "negative", lngLat: click },
     ];
+    logHavemaalerSegmentationEvent("havemaaler_wand_refine", s.wandCrop, s.wandPreview, nextSeeds, { action: reviewMode });
     setWandSeeds(nextSeeds);
     try {
       await recomputeWandSegmentation(s.wandCrop, nextSeeds);
@@ -848,6 +838,7 @@ export default function GardenSizer() {
     const s = stateRef.current;
     if (!s.wandCrop || s.wandLoading) return;
     try {
+      logHavemaalerSegmentationEvent("havemaaler_wand_retry", s.wandCrop, s.wandPreview, s.wandSeeds, { action: "manual_ultra_strict" });
       await recomputeWandSegmentation(s.wandCrop, s.wandSeeds, { highPrecision: true, strictness: "ultra" });
     } catch {
       toast.error("Strammere kant kunne ikke beregnes");
@@ -878,6 +869,7 @@ export default function GardenSizer() {
     if (s.wandCrop) {
       writeAcceptedSegmentationCache(buildSegmentationCacheKey(s.wandCrop, s.wandSeeds), result);
     }
+    logHavemaalerSegmentationEvent("havemaaler_wand_accept", s.wandCrop, result, s.wandSeeds, { accepted: true, action: s.wandOp });
     setWandConfidence(result.confidence);
     clearWandPreview();
     setMode("edit");

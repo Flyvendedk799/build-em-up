@@ -3,6 +3,7 @@ import {
   buildSegmentationCacheKey,
   lngLatToPixel,
   pixelToLngLat,
+  segmentLawnImageDataCandidates,
   segmentLawnImageData,
   type LawnCropPayload,
   type LngLat,
@@ -82,6 +83,22 @@ describe("lawnSegmentation", () => {
     expect(pointInRing(pixelToLngLat([30, 40], [0, 0, 96, 96], 96, 96), result.polygon)).toBe(true);
     expect(pointInRing(pixelToLngLat([84, 40], [0, 0, 96, 96], 96, 96), result.polygon)).toBe(false);
     expect(result.diagnostics.hardscapeLeakage).toBeLessThan(0.2);
+  });
+
+  it("scores strict and ultra precision candidates from one image decode", () => {
+    const image = makeImageData(96, 96, [156, 156, 150]);
+    rect(image, 16, 16, 74, 80, [70, 136, 68]);
+    rect(image, 45, 58, 74, 80, [145, 142, 132]);
+
+    const selection = segmentLawnImageDataCandidates(image, crop([30, 40]), [], {
+      highPrecision: true,
+      createMaskPreview: false,
+    });
+
+    expect(selection.candidates).toHaveLength(2);
+    expect(selection.result.diagnostics.candidateCount).toBe(2);
+    expect(selection.result.diagnostics.candidateScores).toHaveLength(2);
+    expect(["strict", "ultra"]).toContain(selection.result.diagnostics.selectedCandidate);
   });
 
   it("turns negative refinement clicks into remove constraints", () => {

@@ -45,6 +45,16 @@ export type LawnSegmentationDiagnostics = {
   simplifiedPoints: number;
   imagerySource: ImagerySource;
   strictness?: "normal" | "strict" | "ultra";
+  selectedCandidate?: "normal" | "strict" | "ultra";
+  candidateCount?: number;
+  candidateScores?: Array<{
+    strictness: "normal" | "strict" | "ultra";
+    score: number;
+    confidence: number;
+    areaM2: number;
+    hardscapeLeakage: number;
+    warnings: string[];
+  }>;
   recoveredBy?: "ultra-strict";
   warnings: string[];
 };
