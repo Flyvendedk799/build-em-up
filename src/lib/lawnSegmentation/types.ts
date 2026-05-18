@@ -28,6 +28,7 @@ export type SegmentationSeed = {
 
 export type SegmentationOptions = {
   highPrecision?: boolean;
+  strictness?: "normal" | "strict" | "ultra";
   algorithmVersion?: string;
   createMaskPreview?: boolean;
 };
@@ -43,6 +44,8 @@ export type LawnSegmentationDiagnostics = {
   contourPoints: number;
   simplifiedPoints: number;
   imagerySource: ImagerySource;
+  strictness?: "normal" | "strict" | "ultra";
+  recoveredBy?: "ultra-strict";
   warnings: string[];
 };
 

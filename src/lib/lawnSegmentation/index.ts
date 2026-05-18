@@ -24,6 +24,8 @@ export type {
   SegmentationSeed,
 } from "./types";
 
+type SegmentationStrictness = NonNullable<SegmentationOptions["strictness"]>;
+
 export const LAWN_SEGMENTATION_VERSION = "lawn-cv-v2";
 
 type FeatureMaps = {
@@ -44,6 +46,10 @@ const NEIGHBORS_8 = [
   [-1, 0], [1, 0],
   [-1, 1], [0, 1], [1, 1],
 ] as const;
+
+function strictnessFor(options: SegmentationOptions): SegmentationStrictness {
+  return options.strictness ?? (options.highPrecision ? "strict" : "normal");
+}
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -258,6 +264,7 @@ function buildFeatureMaps(
   seeds: PixelSeed[],
   options: SegmentationOptions,
 ): FeatureMaps {
+  const strictness = strictnessFor(options);
   const { width, height, data } = imageData;
   const n = width * height;
   const grass = new Float32Array(n);
@@ -359,14 +366,14 @@ function buildFeatureMaps(
   }
 
   for (let p = 0; p < n; p++) {
-    const roughVegetation = texture[p] > 0.14;
+    const roughVegetation = texture[p] > (strictness === "ultra" ? 0.1 : 0.14);
     const deepShadowDifferent = luminance[p] < 0.26 && seedSimilarity[p] < 0.48;
     const texturePenalty = roughVegetation
-      ? smoothstep(0.12, 0.34, texture[p]) * (seedSimilarity[p] > 0.74 ? 0.2 : 0.36)
+      ? smoothstep(0.1, 0.32, texture[p]) * (seedSimilarity[p] > 0.74 ? (strictness === "ultra" ? 0.24 : 0.2) : (strictness === "ultra" ? 0.46 : 0.36))
       : texture[p] * 0.08;
-    const shadowPenalty = deepShadowDifferent ? smoothstep(0.28, 0.12, luminance[p]) * 0.2 : 0;
+    const shadowPenalty = deepShadowDifferent ? smoothstep(0.28, 0.12, luminance[p]) * (strictness === "ultra" ? 0.28 : 0.2) : 0;
     grass[p] = clamp(grass[p] - texturePenalty - shadowPenalty, 0, 1);
-    if (texture[p] > 0.22 && seedSimilarity[p] < 0.82) hardscape[p] = Math.max(hardscape[p], 0.52);
+    if (texture[p] > (strictness === "ultra" ? 0.16 : 0.22) && seedSimilarity[p] < 0.82) hardscape[p] = Math.max(hardscape[p], strictness === "ultra" ? 0.6 : 0.52);
   }
 
   return { grass, hardscape, edge, texture, luminance, seedSimilarity, negative, parcel };
@@ -405,17 +412,19 @@ function keepComponentContainingSeeds(mask: Uint8Array, width: number, height: n
 }
 
 function growMask(maps: FeatureMaps, metadata: LawnCropMetadata, seeds: PixelSeed[], options: SegmentationOptions) {
+  const strictness = strictnessFor(options);
+  const ultra = strictness === "ultra";
   const { width, height } = metadata;
   const start = metadata.clickPx;
   const startIdx = Math.round(clamp(start[1], 0, height - 1)) * width + Math.round(clamp(start[0], 0, width - 1));
   const startScore = maps.grass[startIdx] || 0;
   const strongClick = startScore >= 0.55;
   const threshold = strongClick
-    ? (options.highPrecision ? 0.52 : 0.48)
-    : clamp(startScore * 0.72, options.highPrecision ? 0.36 : 0.32, options.highPrecision ? 0.52 : 0.48);
-  const softThreshold = Math.max(options.highPrecision ? 0.31 : 0.28, threshold - (options.highPrecision ? 0.04 : 0.06));
-  const strongEdge = options.highPrecision ? 0.08 : 0.1;
-  const seedFloor = options.highPrecision ? 0.24 : 0.17;
+    ? (ultra ? 0.58 : options.highPrecision ? 0.52 : 0.48)
+    : clamp(startScore * (ultra ? 0.82 : 0.72), ultra ? 0.42 : options.highPrecision ? 0.36 : 0.32, ultra ? 0.58 : options.highPrecision ? 0.52 : 0.48);
+  const softThreshold = Math.max(ultra ? 0.38 : options.highPrecision ? 0.31 : 0.28, threshold - (ultra ? 0.02 : options.highPrecision ? 0.04 : 0.06));
+  const strongEdge = ultra ? 0.055 : options.highPrecision ? 0.08 : 0.1;
+  const seedFloor = ultra ? 0.34 : options.highPrecision ? 0.24 : 0.17;
   const mask = new Uint8Array(width * height);
   const visited = new Uint8Array(width * height);
   const queue: number[] = [];
@@ -447,11 +456,11 @@ function growMask(maps: FeatureMaps, metadata: LawnCropMetadata, seeds: PixelSee
       visited[np] = 1;
       if (maps.negative[np]) continue;
       if (maps.parcel && !maps.parcel[np]) continue;
-      if (maps.hardscape[np] > (options.highPrecision ? 0.58 : 0.64)) continue;
-      if (maps.texture[np] > (options.highPrecision ? 0.18 : 0.22) && maps.seedSimilarity[np] < 0.78) continue;
-      if (maps.edge[np] > strongEdge && maps.seedSimilarity[np] < 0.82 && maps.grass[np] < threshold + 0.28) continue;
-      if (maps.seedSimilarity[np] < seedFloor && maps.grass[np] < threshold + 0.16) continue;
-      if (maps.grass[np] >= threshold || (maps.grass[np] >= softThreshold && maps.seedSimilarity[np] >= 0.58)) {
+      if (maps.hardscape[np] > (ultra ? 0.5 : options.highPrecision ? 0.58 : 0.64)) continue;
+      if (maps.texture[np] > (ultra ? 0.14 : options.highPrecision ? 0.18 : 0.22) && maps.seedSimilarity[np] < (ultra ? 0.86 : 0.78)) continue;
+      if (maps.edge[np] > strongEdge && maps.seedSimilarity[np] < (ultra ? 0.9 : 0.82) && maps.grass[np] < threshold + (ultra ? 0.34 : 0.28)) continue;
+      if (maps.seedSimilarity[np] < seedFloor && maps.grass[np] < threshold + (ultra ? 0.08 : 0.16)) continue;
+      if (maps.grass[np] >= threshold || (maps.grass[np] >= softThreshold && maps.seedSimilarity[np] >= (ultra ? 0.68 : 0.58))) {
         mask[np] = 1;
         queue.push(np);
       }
@@ -513,14 +522,16 @@ function constrainMask(
   seeds: PixelSeed[],
   options: SegmentationOptions,
 ): Uint8Array {
+  const strictness = strictnessFor(options);
+  const ultra = strictness === "ultra";
   const out = new Uint8Array(mask);
   for (let i = 0; i < out.length; i++) {
     if (!out[i]) continue;
     if (maps.negative[i]) out[i] = 0;
     else if (maps.parcel && !maps.parcel[i]) out[i] = 0;
-    else if (maps.hardscape[i] > (options.highPrecision ? 0.56 : 0.62)) out[i] = 0;
-    else if (maps.texture[i] > (options.highPrecision ? 0.2 : 0.25) && maps.seedSimilarity[i] < 0.76) out[i] = 0;
-    else if (maps.grass[i] < threshold - 0.05 && maps.seedSimilarity[i] < 0.68) out[i] = 0;
+    else if (maps.hardscape[i] > (ultra ? 0.48 : options.highPrecision ? 0.56 : 0.62)) out[i] = 0;
+    else if (maps.texture[i] > (ultra ? 0.16 : options.highPrecision ? 0.2 : 0.25) && maps.seedSimilarity[i] < (ultra ? 0.82 : 0.76)) out[i] = 0;
+    else if (maps.grass[i] < threshold - (ultra ? 0.015 : 0.05) && maps.seedSimilarity[i] < (ultra ? 0.76 : 0.68)) out[i] = 0;
   }
   return keepComponentContainingSeeds(out, metadata.width, metadata.height, seeds);
 }
@@ -711,6 +722,7 @@ export function segmentLawnImageData(
   seeds: SegmentationSeed[] = [],
   options: SegmentationOptions = {},
 ): LawnSegmentationResult {
+  const strictness = strictnessFor(options);
   const metadata: LawnCropMetadata = {
     ...crop,
     width: imageData.width,
@@ -744,9 +756,9 @@ export function segmentLawnImageData(
 
   const outerRaw = positiveContours[0];
   const outerArea = Math.abs(signedAreaPx(outerRaw));
-  const simplifyPx = clamp((options.highPrecision ? 0.28 : 0.45) / Math.max(0.035, metadata.metersPerPx), 1.4, options.highPrecision ? 4 : 7);
+  const simplifyPx = clamp((strictness === "ultra" ? 0.18 : options.highPrecision ? 0.28 : 0.45) / Math.max(0.035, metadata.metersPerPx), 1.1, strictness === "ultra" ? 3.2 : options.highPrecision ? 4 : 7);
   let outer = simplifyClosedRing(outerRaw, simplifyPx);
-  outer = snapRingToEdges(outer, maps.edge, metadata.width, metadata.height, options.highPrecision ? 2 : 3);
+  outer = snapRingToEdges(outer, maps.edge, metadata.width, metadata.height, strictness === "ultra" ? 1 : options.highPrecision ? 2 : 3);
   outer = simplifyClosedRing(outer, Math.max(1.1, simplifyPx * 0.45));
 
   const holes = contours
@@ -793,7 +805,7 @@ export function segmentLawnImageData(
   const blockingWarnings = new Set(["self_intersection", "area_too_small", "area_too_large", "click_outside_polygon", "parcel_leak", "hardscape_heavy_mask"]);
   const hasBlockingWarning = warnings.some((warning) => blockingWarnings.has(warning));
   if (options.highPrecision && !hasBlockingWarning && outer.length >= 4) {
-    confidence = Math.max(confidence, 0.4);
+    confidence = Math.max(confidence, strictness === "ultra" ? 0.42 : 0.4);
   }
   confidence = clamp(confidence, 0, 0.98);
 
@@ -818,6 +830,7 @@ export function segmentLawnImageData(
       contourPoints: outerRaw.length,
       simplifiedPoints: outer.length,
       imagerySource: metadata.imagerySource,
+      strictness,
       warnings,
     },
   };

@@ -706,6 +706,24 @@ export default function GardenSizer() {
     return !result.diagnostics.warnings.some((warning) => rejectWarnings.has(warning));
   }
 
+  function wandResultScore(result: LawnSegmentationResult) {
+    if (!result.polygon.length) return -Infinity;
+    const warnings = result.diagnostics.warnings;
+    const blocking = warnings.filter((warning) => ["self_intersection", "area_too_small", "area_too_large", "click_outside_polygon", "parcel_leak", "hardscape_heavy_mask"].includes(warning)).length;
+    return result.confidence
+      - blocking * 0.6
+      - (warnings.includes("touches_crop_edge") ? 0.18 : 0)
+      - result.diagnostics.hardscapeLeakage * 0.45
+      - Math.max(0, result.diagnostics.areaM2 - 900) / 9000;
+  }
+
+  function shouldTryUltraStrict(result: LawnSegmentationResult) {
+    return result.confidence < 0.4
+      || result.diagnostics.warnings.includes("touches_crop_edge")
+      || result.diagnostics.hardscapeLeakage > 0.08
+      || result.diagnostics.simplifiedPoints > 70;
+  }
+
   async function setWandSegmentationResult(crop: LawnCropPayload, seeds: SegmentationSeed[], result: LawnSegmentationResult, cached = false) {
     if (!result.polygon.length) {
       setWandPreview(null);
@@ -733,15 +751,28 @@ export default function GardenSizer() {
     }
   }
 
-  async function recomputeWandSegmentation(crop: LawnCropPayload, seeds: SegmentationSeed[], opts: { highPrecision?: boolean; cached?: boolean } = {}) {
+  async function recomputeWandSegmentation(crop: LawnCropPayload, seeds: SegmentationSeed[], opts: { highPrecision?: boolean; cached?: boolean; strictness?: "normal" | "strict" | "ultra" } = {}) {
     const highPrecision = opts.highPrecision ?? true;
     setWandLoading(true);
-    setWandStage(highPrecision ? "Tegner kant" : "Finder græs");
+    setWandStage(opts.strictness === "ultra" ? "Tegner kant" : highPrecision ? "Tegner kant" : "Finder græs");
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    const result = await segmentLawnFromCrop(crop, seeds, {
+    let result = await segmentLawnFromCrop(crop, seeds, {
       highPrecision,
+      strictness: opts.strictness ?? (highPrecision ? "strict" : "normal"),
       createMaskPreview: true,
     });
+    if (highPrecision && opts.strictness !== "ultra" && shouldTryUltraStrict(result)) {
+      setWandStage("Tegner kant");
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const ultra = await segmentLawnFromCrop(crop, seeds, {
+        highPrecision: true,
+        strictness: "ultra",
+        createMaskPreview: true,
+      });
+      if (wandResultScore(ultra) >= wandResultScore(result) || result.confidence < 0.4) {
+        result = { ...ultra, diagnostics: { ...ultra.diagnostics, recoveredBy: "ultra-strict" } };
+      }
+    }
     setWandStage("Tegner kant");
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await setWandSegmentationResult(crop, seeds, result, !!opts.cached);
@@ -817,9 +848,9 @@ export default function GardenSizer() {
     const s = stateRef.current;
     if (!s.wandCrop || s.wandLoading) return;
     try {
-      await recomputeWandSegmentation(s.wandCrop, s.wandSeeds, { highPrecision: true });
+      await recomputeWandSegmentation(s.wandCrop, s.wandSeeds, { highPrecision: true, strictness: "ultra" });
     } catch {
-      toast.error("Høj præcision kunne ikke beregnes");
+      toast.error("Strammere kant kunne ikke beregnes");
       setWandLoading(false);
     }
   }
@@ -1125,7 +1156,7 @@ export default function GardenSizer() {
                           <button className="tool-btn is-active" onClick={acceptWandPreview} disabled={wandLoading || !canAcceptWandResult(wandPreview)}>Accept</button>
                           <button className={`tool-btn ${wandReviewMode === "add" ? "is-active" : ""}`} onClick={() => setWandReviewMode(v => v === "add" ? "none" : "add")} disabled={wandLoading}>Add grass</button>
                           <button className={`tool-btn ${wandReviewMode === "remove" ? "is-active" : ""}`} onClick={() => setWandReviewMode(v => v === "remove" ? "none" : "remove")} disabled={wandLoading}>Remove area</button>
-                          <button className="tool-btn" onClick={tryHighPrecisionWand} disabled={wandLoading}>Try high precision</button>
+                          <button className="tool-btn" onClick={tryHighPrecisionWand} disabled={wandLoading}>Try tighter</button>
                           <button className="tool-btn" onClick={manualEditFromWand} disabled={wandLoading}>Manual edit</button>
                         </div>
                       </div>
