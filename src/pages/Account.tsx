@@ -166,7 +166,7 @@ export default function Account() {
                         ) : (
                           <button className="btn btn-ghost btn-sm" onClick={() => { setActive(g.id); toast.success(`${g.name} er nu aktiv`); }}>Brug denne</button>
                         )}
-                        <Link to="/vanding" className="btn btn-ghost btn-sm">Vanding</Link>
+                        <Link to="/havekompagnon" className="btn btn-ghost btn-sm">Havekompagnon</Link>
                       </div>
                     </div>
                   </div>
@@ -178,7 +178,7 @@ export default function Account() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start", marginTop: 24 }}>
           {/* Devices */}
-          <Card title="Mine enheder" action={<Link to="/vanding" className="btn btn-ghost btn-sm">Konfigurer</Link>}>
+          <Card title="Mine enheder" action={<Link to="/havekompagnon" className="btn btn-ghost btn-sm">Konfigurer</Link>}>
             {devices.length === 0 ? (
               <Empty text="Ingen enheder tilknyttet endnu." />
             ) : (

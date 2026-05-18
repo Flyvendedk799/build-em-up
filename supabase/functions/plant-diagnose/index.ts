@@ -26,7 +26,7 @@ Schema:
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { imageDataUrl, note } = await req.json();
+    const { imageDataUrl, note, context } = await req.json();
     if (!imageDataUrl || typeof imageDataUrl !== "string") {
       return new Response(JSON.stringify({ error: "imageDataUrl required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -42,7 +42,14 @@ Deno.serve(async (req) => {
         messages: [
           { role: "system", content: SYSTEM },
           { role: "user", content: [
-            { type: "text", text: note ? `Brugerens note: ${note}` : "Diagnosticer denne plante." },
+            {
+              type: "text",
+              text: [
+                note ? `Brugerens note: ${note}` : "Diagnosticer denne plante.",
+                context ? `Havekontekst: ${JSON.stringify(context)}` : "",
+                "Hvis konteksten angiver zone eller plante, så brug den til at gøre behandlingen konkret.",
+              ].filter(Boolean).join("\n"),
+            },
             { type: "image_url", image_url: { url: imageDataUrl } },
           ] },
         ],
@@ -59,7 +66,7 @@ Deno.serve(async (req) => {
 
     const aiJson = await aiResp.json();
     const txt = aiJson.choices?.[0]?.message?.content ?? "{}";
-    let parsed: any = {};
+    let parsed: Record<string, unknown> = {};
     try { parsed = JSON.parse(txt); } catch { parsed = { diagnosis: txt }; }
 
     // Persist to plant_health_log if authenticated
@@ -73,10 +80,18 @@ Deno.serve(async (req) => {
         if (user) {
           await sb.from("plant_health_log").insert({
             user_id: user.id,
-            diagnosis: parsed.diagnosis ?? null,
-            severity: parsed.severity ?? null,
-            treatment: parsed.treatment ?? null,
-            product_suggestions: parsed.product_suggestions ?? [],
+            garden_id: context?.garden_id ?? null,
+            zone_id: context?.zone_id ?? null,
+            plant_id: context?.plant_id ?? null,
+            observation_id: context?.observation_id ?? null,
+            diagnosis: typeof parsed.diagnosis === "string" ? parsed.diagnosis : null,
+            severity: typeof parsed.severity === "string" ? parsed.severity : null,
+            confidence: typeof parsed.confidence === "number" ? parsed.confidence : null,
+            symptoms: Array.isArray(parsed.symptoms) ? parsed.symptoms.map(String) : [],
+            causes: Array.isArray(parsed.causes) ? parsed.causes.map(String) : [],
+            treatment: typeof parsed.treatment === "string" ? parsed.treatment : null,
+            prevention: typeof parsed.prevention === "string" ? parsed.prevention : null,
+            product_suggestions: Array.isArray(parsed.product_suggestions) ? parsed.product_suggestions : [],
             raw: parsed,
           });
         }

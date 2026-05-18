@@ -1025,7 +1025,7 @@ export default function GardenSizer() {
     useActiveGarden.getState().setActive(g.id);
     try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
     toast.success("Have gemt", {
-      action: { label: "Lav vandingsplan", onClick: () => navigate("/vanding") },
+      action: { label: "Åbn Havekompagnon", onClick: () => navigate("/havekompagnon") },
       duration: 6000,
     });
     navigate("/konto");

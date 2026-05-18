@@ -1,0 +1,157 @@
+import { Camera, CheckCircle2, CloudRain, Droplets, Leaf, MapPin, Radio, Sparkles, ThermometerSun } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { Forecast } from "@/lib/wateringAI";
+import type { CareAction } from "@/lib/companionTypes";
+
+type Garden = {
+  id: string;
+  name: string;
+  area_m2?: number | null;
+};
+
+type Zone = {
+  id: string;
+  name: string;
+  type: string;
+};
+
+type Device = {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  battery: number | null;
+};
+
+type Props = {
+  garden: Garden;
+  zones: Zone[];
+  plantCount: number;
+  openActions: CareAction[];
+  forecast: Forecast | null;
+  plannedL: number;
+  savedL: number;
+  devices: Device[];
+  onScan: () => void;
+  onMap: () => void;
+  onPlan: () => void;
+  onCompleteAction: (id: string) => void;
+};
+
+function priorityLabel(priority: CareAction["priority"]) {
+  if (priority === "urgent") return "Akut";
+  if (priority === "high") return "Vigtig";
+  if (priority === "low") return "Lav";
+  return "Normal";
+}
+
+function weatherLine(forecast: Forecast | null) {
+  if (!forecast) return "Vejret hentes";
+  const bits = [
+    `${Math.round(forecast.temp_max)} grader`,
+    `${forecast.precip_mm.toFixed(1)} mm regn`,
+  ];
+  if (forecast.wind_max) bits.push(`${Math.round(forecast.wind_max)} m/s vind`);
+  return bits.join(" · ");
+}
+
+export default function CompanionToday({
+  garden,
+  zones,
+  plantCount,
+  openActions,
+  forecast,
+  plannedL,
+  savedL,
+  devices,
+  onScan,
+  onMap,
+  onPlan,
+  onCompleteAction,
+}: Props) {
+  const urgent = openActions.filter((a) => a.priority === "urgent" || a.priority === "high");
+  const nextActions = (urgent.length ? urgent : openActions).slice(0, 4);
+  const sensors = devices.filter((d) => d.kind === "sensor");
+  const onlineDevices = devices.filter((d) => d.status === "online" || d.status === "running").length;
+
+  return (
+    <div className="companion-today">
+      <section className="companion-hero">
+        <div>
+          <div className="companion-eyebrow">Havekompagnonen · I dag</div>
+          <h1>{garden.name} er klar til dagens runde.</h1>
+          <p>{weatherLine(forecast)}</p>
+          <div className="companion-hero-actions">
+            <Button onClick={onScan}>
+              <Camera size={16} className="mr-1.5" /> Scan haven
+            </Button>
+            <Button variant="outline" onClick={onMap}>
+              <MapPin size={16} className="mr-1.5" /> Se kort
+            </Button>
+            <Button variant="outline" onClick={onPlan}>
+              <CheckCircle2 size={16} className="mr-1.5" /> Plan
+            </Button>
+          </div>
+        </div>
+        <div className="companion-hero-orbit" aria-hidden>
+          <Sparkles size={34} />
+          <span>{openActions.length}</span>
+          <small>åbne handlinger</small>
+        </div>
+      </section>
+
+      <div className="companion-kpis">
+        <Metric icon={<Leaf size={17} />} label="Planter" value={String(plantCount)} />
+        <Metric icon={<MapPin size={17} />} label="Zoner" value={String(zones.length)} />
+        <Metric icon={<Droplets size={17} />} label="Vanding uge" value={`${plannedL} L`} />
+        <Metric icon={<CloudRain size={17} />} label="Sparet" value={`${savedL} L`} />
+        <Metric icon={<Radio size={17} />} label="Smart have" value={`${onlineDevices}/${devices.length}`} hint={sensors.length ? `${sensors.length} sensorer` : "ingen sensorer"} />
+        <Metric icon={<ThermometerSun size={17} />} label="Temperatur" value={forecast ? `${Math.round(forecast.temp_max)}°` : "-"} />
+      </div>
+
+      <section className="companion-band">
+        <div className="companion-section-head">
+          <div>
+            <div className="companion-eyebrow">Næste bedste handlinger</div>
+            <h2>Din have har sorteret dagen for dig.</h2>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onPlan}>Alle opgaver</Button>
+        </div>
+        {nextActions.length === 0 ? (
+          <div className="companion-empty">
+            <CheckCircle2 size={20} />
+            Ingen akutte opgaver. Tag en scanrunde for at opdatere kortet.
+          </div>
+        ) : (
+          <div className="companion-action-list">
+            {nextActions.map((action) => (
+              <article key={action.id} className={`companion-action companion-action--${action.priority}`}>
+                <div>
+                  <span>{priorityLabel(action.priority)}</span>
+                  <h3>{action.title}</h3>
+                  {action.reason && <p>{action.reason}</p>}
+                </div>
+                <Button variant="outline" size="sm" onClick={() => onCompleteAction(action.id)}>
+                  <CheckCircle2 size={14} className="mr-1.5" /> Klar
+                </Button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Metric({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint?: string }) {
+  return (
+    <div className="companion-metric">
+      <div className="companion-metric-icon">{icon}</div>
+      <div>
+        <div className="companion-metric-label">{label}</div>
+        <div className="companion-metric-value">{value}</div>
+        {hint && <div className="companion-metric-hint">{hint}</div>}
+      </div>
+    </div>
+  );
+}

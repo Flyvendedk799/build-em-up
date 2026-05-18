@@ -9,15 +9,18 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { image, catalog } = await req.json();
+    const { image, catalog, context } = await req.json();
     if (!image || typeof image !== "string") {
       return json({ error: "image (data URL or http URL) is required" }, 400);
     }
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) return json({ error: "LOVABLE_API_KEY not configured" }, 500);
 
-    const catalogHint = Array.isArray(catalog) && catalog.length > 0
-      ? `\n\nIf one of these slugs match, prefer it:\n${catalog.slice(0, 200).map((c: any) => `- ${c.slug}: ${c.name_da}${c.latin ? " (" + c.latin + ")" : ""}`).join("\n")}`
+    const catalogRows = Array.isArray(catalog)
+      ? catalog as { slug: string; name_da: string; latin?: string | null }[]
+      : [];
+    const catalogHint = catalogRows.length > 0
+      ? `\n\nIf one of these slugs match, prefer it:\n${catalogRows.slice(0, 200).map((c) => `- ${c.slug}: ${c.name_da}${c.latin ? " (" + c.latin + ")" : ""}`).join("\n")}`
       : "";
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -30,12 +33,13 @@ Deno.serve(async (req) => {
             role: "system",
             content:
               "Du er en dansk haveekspert. Identificér planten på billedet. Svar altid på dansk. Vær præcis. " +
-              "Hvis du ikke er sikker, sæt confidence=low og foreslå 2-3 muligheder." + catalogHint,
+              "Hvis du ikke er sikker, sæt confidence=low og foreslå 2-3 muligheder. " +
+              "Giv også et praktisk forslag til placering/zone-fit hvis havekontekst er med." + catalogHint,
           },
           {
             role: "user",
             content: [
-              { type: "text", text: "Hvad er det for en plante? Returnér struktureret svar." },
+              { type: "text", text: `Hvad er det for en plante? Returnér struktureret svar.${context ? `\nHavekontekst: ${JSON.stringify(context)}` : ""}` },
               { type: "image_url", image_url: { url: image } },
             ],
           },
@@ -60,6 +64,18 @@ Deno.serve(async (req) => {
                 care_tip: { type: "string", description: "Kort plejetip på dansk (1-2 sætninger)" },
                 water_need: { type: "string", enum: ["low", "medium", "high"] },
                 sun: { type: "string", enum: ["sun", "part", "shade"] },
+                suggested_zone_fit: { type: "string", description: "Kort vurdering af om den valgte zone passer til planten" },
+                lifecycle_stage: { type: "string", description: "fx frøplante, vegetativ, blomstrer, frugtsætter, moden" },
+                care_metadata: {
+                  type: "object",
+                  properties: {
+                    edible: { type: "boolean" },
+                    perennial: { type: "boolean" },
+                    frost_sensitive: { type: "boolean" },
+                    map_hint: { type: "string" },
+                  },
+                  additionalProperties: false,
+                },
               },
               required: ["name_da", "confidence", "care_tip"],
               additionalProperties: false,
@@ -88,7 +104,7 @@ Deno.serve(async (req) => {
   }
 });
 
-function json(body: any, status = 200) {
+function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },

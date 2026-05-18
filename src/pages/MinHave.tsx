@@ -127,7 +127,7 @@ export default function MinHave() {
         title: `Spring vanding over i dag`,
         sub: `${todayWeather.precip_mm.toFixed(1)} mm regn forventet`,
         tone: "info",
-        cta: { to: "/vanding", label: "Se plan" },
+        cta: { to: "/havekompagnon", label: "Se plan" },
       });
     }
     // overdue / due-today tasks
@@ -234,7 +234,7 @@ export default function MinHave() {
               <Panel
                 title="Dagens have"
                 subtitle="Det vigtigste lige nu"
-                action={<Link to="/vanding" className="btn btn-ghost btn-sm">Plan <ArrowRight size={14} /></Link>}
+                action={<Link to="/havekompagnon" className="btn btn-ghost btn-sm">Plan <ArrowRight size={14} /></Link>}
               >
                 {todayItems.length === 0 ? (
                   <div style={{ padding: "28px 8px", textAlign: "center", color: "var(--ink-500)" }}>
@@ -296,8 +296,8 @@ export default function MinHave() {
                   </select>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <Link to="/vanding" className="btn btn-ghost btn-sm" style={{ justifyContent: "center" }}>
-                    <Droplets size={14} /> Vanding
+                  <Link to="/havekompagnon" className="btn btn-ghost btn-sm" style={{ justifyContent: "center" }}>
+                    <Droplets size={14} /> Kompagnon
                   </Link>
                   <Link to="/ai" className="btn btn-ghost btn-sm" style={{ justifyContent: "center" }}>
                     <MessageSquare size={14} /> Spørg AI
@@ -314,7 +314,7 @@ export default function MinHave() {
                 gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                 gap: 14,
               }}>
-                <Shortcut to="/vanding" icon={<Droplets />} title="Vandingsplan" sub="Smart, vejr-styret vanding" />
+                <Shortcut to="/havekompagnon" icon={<Droplets />} title="Havekompagnon" sub="Kort, scan og smart vanding" />
                 <Shortcut to="/ai" icon={<MessageSquare />} title="Plantepleje AI" sub="Diagnose & rådgivning" />
                 <Shortcut to="/havemaaler" icon={<Ruler />} title="Havemåler" sub="Mål bede, plæne, terrasse" />
                 <Shortcut to="/webshop" icon={<ShoppingBag />} title="Webshop" sub="Frø, gødning, redskaber" />
@@ -326,7 +326,7 @@ export default function MinHave() {
               <Panel
                 title={`I ${monthName}`}
                 subtitle="Sæsonens opgaver i danske haver"
-                action={<Link to="/vanding" className="btn btn-ghost btn-sm">Sæson <ArrowRight size={14} /></Link>}
+                action={<Link to="/havekompagnon" className="btn btn-ghost btn-sm">Sæson <ArrowRight size={14} /></Link>}
               >
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
                   {seasonalTips.map((tip, i) => (

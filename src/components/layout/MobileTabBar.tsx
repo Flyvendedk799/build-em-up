@@ -38,12 +38,15 @@ const items = [
     ),
   },
   {
-    to: "/ai",
-    key: "ai",
-    label: "AI",
+    to: "/havekompagnon",
+    key: "companion",
+    label: "Have",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+        <path d="M12 21V9" />
+        <path d="M12 13c-4 0-7-3-7-7 4 0 7 3 7 7Z" />
+        <path d="M12 11c4 0 7-3 7-7-4 0-7 3-7 7Z" />
+        <path d="M5 21h14" />
       </svg>
     ),
   },
