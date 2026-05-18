@@ -404,6 +404,63 @@ export type Database = {
         }
         Relationships: []
       }
+      havemaaler_segmentation_events: {
+        Row: {
+          accepted: boolean | null
+          algorithm_version: string | null
+          client_context: Json
+          confidence: number | null
+          created_at: string
+          crop_hash: string | null
+          diagnostics: Json
+          event_name: string
+          id: string
+          imagery_source: string | null
+          needs_review: boolean | null
+          seed_counts: Json
+          session_id: string
+          strictness: string | null
+          user_id: string | null
+          warnings: string[]
+        }
+        Insert: {
+          accepted?: boolean | null
+          algorithm_version?: string | null
+          client_context?: Json
+          confidence?: number | null
+          created_at?: string
+          crop_hash?: string | null
+          diagnostics?: Json
+          event_name: string
+          id?: string
+          imagery_source?: string | null
+          needs_review?: boolean | null
+          seed_counts?: Json
+          session_id: string
+          strictness?: string | null
+          user_id?: string | null
+          warnings?: string[]
+        }
+        Update: {
+          accepted?: boolean | null
+          algorithm_version?: string | null
+          client_context?: Json
+          confidence?: number | null
+          created_at?: string
+          crop_hash?: string | null
+          diagnostics?: Json
+          event_name?: string
+          id?: string
+          imagery_source?: string | null
+          needs_review?: boolean | null
+          seed_counts?: Json
+          session_id?: string
+          strictness?: string | null
+          user_id?: string | null
+          warnings?: string[]
+        }
+        Relationships: []
+      }
       lawn_segmentation_cache: {
         Row: {
           bbox_hash: string
