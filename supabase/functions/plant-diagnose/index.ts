@@ -84,6 +84,7 @@ Deno.serve(async (req) => {
             zone_id: context?.zone_id ?? null,
             plant_id: context?.plant_id ?? null,
             observation_id: context?.observation_id ?? null,
+            image_url: typeof context?.image_url === "string" ? context.image_url : null,
             diagnosis: typeof parsed.diagnosis === "string" ? parsed.diagnosis : null,
             severity: typeof parsed.severity === "string" ? parsed.severity : null,
             confidence: typeof parsed.confidence === "number" ? parsed.confidence : null,

@@ -1,52 +1,472 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Bot,
+  CalendarDays,
+  Camera,
+  Check,
+  ClipboardList,
+  ImagePlus,
+  Leaf,
+  Loader2,
+  MapPinned,
+  MessageCircle,
+  NotebookPen,
+  Plus,
+  RefreshCcw,
+  Ruler,
+  Search,
+  Send,
+  Sparkles,
+  Sprout,
+  Stethoscope,
+  Upload,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import DiagnosisCard, { type Diagnosis } from "@/components/plantcare/DiagnosisCard";
+import { supabase } from "@/integrations/supabase/client";
+import type { Json, Tables } from "@/integrations/supabase/types";
+import { useActiveGarden } from "@/lib/activeGarden";
+import { useAuth } from "@/lib/auth";
+import { actionFromScan, actionsFromGrowth } from "@/lib/companionActions";
+import { asNumberConfidence, mapAnchor, normalizeScanResult, type CareAction } from "@/lib/companionTypes";
+import { fileToDataUrl, uploadPlantPhoto } from "@/lib/plantPhotos";
+import "@/styles/plant-care-ai.css";
 
 type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
-type Msg = { role: "user" | "assistant"; content: string | ContentPart[]; diagnosis?: Diagnosis };
+type Msg = { role: "user" | "assistant"; content: string | ContentPart[]; diagnosis?: Diagnosis; scan?: ScanBundle | null };
 type Conv = { id: string; title: string; updated_at: string };
 
-const STARTERS = [
-  "Hvornår skal jeg beskære mine æbletræer?",
-  "Min græsplæne har gule pletter — hvad gør jeg?",
-  "Hvad kan jeg så i april i Danmark?",
-  "Hvilken gødning til mine roser?",
+type Garden = Pick<Tables<"gardens">, "id" | "name" | "address" | "area_m2" | "thumbnail_url" | "latitude" | "longitude">;
+type Zone = Pick<Tables<"garden_zones">, "id" | "garden_id" | "name" | "type" | "area_m2" | "sun_exposure" | "soil">;
+type Plant = Tables<"user_plants"> & {
+  plants_catalog?: { name_da: string | null; water_need: string | null; image_url: string | null } | null;
+};
+type Task = Pick<Tables<"task_log">, "id" | "title" | "kind" | "due_at" | "done" | "priority" | "reason" | "source" | "zone_id" | "plant_id" | "observation_id">;
+type Observation = Pick<Tables<"garden_observations">, "id" | "kind" | "image_url" | "caption" | "confidence" | "created_at" | "zone_id" | "plant_id" | "ai_result" | "anchor">;
+type HealthLog = Pick<Tables<"plant_health_log">, "id" | "diagnosis" | "severity" | "confidence" | "created_at" | "symptoms" | "treatment" | "prevention" | "zone_id" | "plant_id" | "observation_id">;
+type DeviceReading = Pick<Tables<"device_readings">, "id" | "kind" | "value" | "unit" | "observed_at" | "zone_id" | "device_id" | "data">;
+
+type CareMode = "coach" | "diagnose" | "identify" | "growth" | "season";
+
+type IdentifyResult = {
+  name_da?: string;
+  latin?: string;
+  category?: string;
+  confidence?: "high" | "medium" | "low" | number;
+  candidate_slugs?: string[];
+  care_tip?: string;
+  water_need?: "low" | "medium" | "high";
+  sun?: "sun" | "part" | "shade";
+  suggested_zone_fit?: string;
+};
+
+type GrowthResult = Record<string, unknown>;
+
+type ScanBundle = {
+  mode: CareMode;
+  gardenId: string | null;
+  zoneId: string | null;
+  plantId: string | null;
+  observationId: string | null;
+  imageUrl: string | null;
+  diagnosis?: Diagnosis | null;
+  identify?: IdentifyResult | null;
+  growth?: GrowthResult | null;
+  taskId?: string | null;
+  plantCreatedId?: string | null;
+};
+
+const CARE_MODES: { key: CareMode; label: string; hint: string; icon: LucideIcon }[] = [
+  { key: "coach", label: "Spørg", hint: "Råd med havekontekst", icon: Bot },
+  { key: "diagnose", label: "Sygdom", hint: "Foto, symptomer og behandling", icon: Stethoscope },
+  { key: "identify", label: "Identificér", hint: "Find planten og gem den", icon: Search },
+  { key: "growth", label: "Vækst", hint: "Sammenlign udvikling", icon: Activity },
+  { key: "season", label: "Sæson", hint: "Denne uge og måned", icon: CalendarDays },
 ];
 
+const STARTERS: Record<CareMode, string[]> = {
+  coach: [
+    "Hvad bør jeg gøre i haven de næste 30 minutter?",
+    "Hvilke planter skal jeg holde ekstra øje med lige nu?",
+    "Lav en enkel plejeplan for weekenden.",
+  ],
+  diagnose: [
+    "Bladene gulner og får brune kanter. Hvad gør jeg?",
+    "Er dette svamp, skadedyr eller næringsmangel?",
+    "Lav en behandlingsplan med opfølgning om tre dage.",
+  ],
+  identify: [
+    "Identificér planten og foreslå hvor den passer i haven.",
+    "Hvad er dette, og hvordan passer jeg den?",
+    "Tilføj denne plante som observation og foreslå pleje.",
+  ],
+  growth: [
+    "Sammenlign væksten med tidligere billeder og fortæl om den trives.",
+    "Er planten tæt på blomstring eller høst?",
+    "Hvilken opfølgning skal jeg tage efter dette vækstfoto?",
+  ],
+  season: [
+    "Hvad skal jeg så, beskære og gøde i denne måned?",
+    "Hvilke sæsonopgaver mangler jeg i mine bede?",
+    "Lav en prioriteret ugeplan ud fra mine planter og åbne opgaver.",
+  ],
+};
+
+function plantLabel(plant: Plant | null | undefined) {
+  if (!plant) return "Ingen plante valgt";
+  return plant.custom_name || plant.plants_catalog?.name_da || plant.plant_slug || "Plante";
+}
+
+function zoneLabel(zone: Zone | null | undefined) {
+  return zone?.name ?? "Hele haven";
+}
+
+function modeLabel(mode: CareMode) {
+  return CARE_MODES.find((item) => item.key === mode)?.label ?? "AI";
+}
+
+function messageText(content: Msg["content"]) {
+  if (typeof content === "string") return content;
+  const part = content.find((item) => item.type === "text");
+  return part && "text" in part ? part.text : "";
+}
+
+function messageImage(content: Msg["content"]) {
+  if (typeof content === "string") return null;
+  const part = content.find((item) => item.type === "image_url");
+  return part && "image_url" in part ? part.image_url.url : null;
+}
+
+function serializeMessages(messages: Msg[]) {
+  return messages.map((message) => ({ role: message.role, content: message.content }));
+}
+
+function defaultPromptForMode(mode: CareMode) {
+  if (mode === "diagnose") return "Analyser billedet og lav en konkret behandlingsplan.";
+  if (mode === "identify") return "Identificér planten, foreslå pleje og hvor den passer i haven.";
+  if (mode === "growth") return "Vurder vækststatus og hvad jeg skal følge op på.";
+  if (mode === "season") return "Lav en konkret sæsonplan baseret på min have.";
+  return "Giv mig konkret plantepleje med udgangspunkt i min have.";
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Ingen dato";
+  return new Date(value).toLocaleDateString("da-DK", { day: "numeric", month: "short" });
+}
+
+function compactTitle(text: string, fallback = "AI-råd fra plantepleje") {
+  const cleaned = text
+    .replace(/[#*_`>-]/g, " ")
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!cleaned) return fallback;
+  return cleaned.length > 68 ? `${cleaned.slice(0, 65)}...` : cleaned;
+}
+
+function taskRowsFromActions(userId: string, actions: Omit<CareAction, "id">[]) {
+  return actions.map((action) => ({
+    user_id: userId,
+    garden_id: action.garden_id,
+    zone_id: action.zone_id ?? null,
+    plant_id: action.plant_id ?? null,
+    observation_id: action.observation_id ?? null,
+    kind: action.kind,
+    title: action.title,
+    notes: action.reason ?? null,
+    due_at: action.due_at ?? null,
+    priority: action.priority,
+    source: action.source,
+    reason: action.reason ?? null,
+    confidence: action.confidence ?? null,
+    payload: action.payload ?? {},
+  }));
+}
+
+function scanKind(mode: CareMode) {
+  if (mode === "identify") return "identify";
+  if (mode === "growth") return "growth";
+  return "diagnosis";
+}
+
+function scanConfidence(scan: ScanBundle | null) {
+  if (!scan) return null;
+  return asNumberConfidence(scan.diagnosis?.confidence ?? scan.identify?.confidence ?? scan.growth?.confidence);
+}
+
+function scanSummary(scan: ScanBundle | null) {
+  if (!scan) return "Ingen scan gemt endnu";
+  if (scan.diagnosis?.diagnosis) return scan.diagnosis.diagnosis;
+  if (scan.identify?.name_da) return scan.identify.name_da;
+  if (typeof scan.growth?.summary === "string") return scan.growth.summary;
+  return "Observation gemt";
+}
+
+function fallbackAssistant(scan: ScanBundle | null, mode: CareMode) {
+  if (!scan) return "AI-tjenesten svarede ikke lige nu, men du kan stadig gemme en opgave eller journalnote manuelt.";
+  if (scan.diagnosis) {
+    const d = scan.diagnosis;
+    return [
+      `Jeg har gemt diagnosen **${d.diagnosis ?? "planteproblem"}** i Havekompagnon.`,
+      d.treatment ? `**Næste skridt:** ${d.treatment}` : "Opret gerne en opfølgningsopgave og tag et nyt foto om få dage.",
+      d.prevention ? `**Forebyg:** ${d.prevention}` : "",
+    ].filter(Boolean).join("\n\n");
+  }
+  if (scan.identify) {
+    return `Jeg har gemt identifikationen **${scan.identify.name_da ?? "ukendt plante"}** som observation. Du kan tilføje den som plante i haven fra handlingspanelet.`;
+  }
+  if (scan.growth) {
+    return `Væksttjekket er gemt. ${String(scan.growth.next_action ?? "Tag et nyt foto fra samme vinkel om nogle dage for bedre trend.")}`;
+  }
+  return `Observationen er gemt. Brug handlingspanelet til at koble den videre til ${modeLabel(mode)}.`;
+}
+
+function latestAssistantContent(messages: Msg[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "assistant") return messageText(messages[index].content);
+  }
+  return "";
+}
+
 export default function PlantCareAI() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
+  const { activeGardenId, setActive } = useActiveGarden();
   const navigate = useNavigate();
+
   const [conversations, setConversations] = useState<Conv[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [careMode, setCareMode] = useState<CareMode>("coach");
+  const [gardens, setGardens] = useState<Garden[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [plants, setPlants] = useState<Plant[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [observations, setObservations] = useState<Observation[]>([]);
+  const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
+  const [deviceReadings, setDeviceReadings] = useState<DeviceReading[]>([]);
+  const [selectedGardenId, setSelectedGardenId] = useState<string | null>(activeGardenId);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
+  const [lastScan, setLastScan] = useState<ScanBundle | null>(null);
+  const [lastAssistantText, setLastAssistantText] = useState("");
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > 8 * 1024 * 1024) { toast.error("Billede er for stort (max 8 MB)."); return; }
-    const reader = new FileReader();
-    reader.onload = () => setPendingImage(reader.result as string);
-    reader.readAsDataURL(f);
-    e.target.value = "";
-  }
+  const selectedGarden = useMemo(
+    () => gardens.find((garden) => garden.id === selectedGardenId) ?? null,
+    [gardens, selectedGardenId],
+  );
+  const selectedZone = useMemo(
+    () => zones.find((zone) => zone.id === selectedZoneId) ?? null,
+    [zones, selectedZoneId],
+  );
+  const visiblePlants = useMemo(
+    () => plants.filter((plant) => !selectedZoneId || plant.zone_id === selectedZoneId),
+    [plants, selectedZoneId],
+  );
+  const selectedPlant = useMemo(
+    () => plants.find((plant) => plant.id === selectedPlantId) ?? null,
+    [plants, selectedPlantId],
+  );
+  const openTasks = useMemo(() => tasks.filter((task) => !task.done), [tasks]);
+  const urgentIssues = useMemo(
+    () => healthLogs.filter((log) => log.severity === "high" || log.severity === "medium").slice(0, 4),
+    [healthLogs],
+  );
+  const latestPhotos = useMemo(
+    () => observations.filter((observation) => observation.image_url).slice(0, 4),
+    [observations],
+  );
+  const starters = STARTERS[careMode];
+  const contextSnapshot = useMemo(() => ({
+    garden: selectedGarden ? {
+      id: selectedGarden.id,
+      name: selectedGarden.name,
+      address: selectedGarden.address,
+      area_m2: selectedGarden.area_m2,
+    } : null,
+    selected_zone: selectedZone ? {
+      id: selectedZone.id,
+      name: selectedZone.name,
+      type: selectedZone.type,
+      sun: selectedZone.sun_exposure,
+      soil: selectedZone.soil,
+    } : null,
+    selected_plant: selectedPlant ? {
+      id: selectedPlant.id,
+      name: plantLabel(selectedPlant),
+      health_status: selectedPlant.health_status,
+      lifecycle_status: selectedPlant.lifecycle_status,
+      last_observed_at: selectedPlant.last_observed_at,
+    } : null,
+    counts: {
+      zones: zones.length,
+      plants: plants.length,
+      open_tasks: openTasks.length,
+      recent_issues: urgentIssues.length,
+      device_readings: deviceReadings.length,
+    },
+    recent_tasks: openTasks.slice(0, 6).map((task) => ({
+      title: task.title,
+      kind: task.kind,
+      due_at: task.due_at,
+      priority: task.priority,
+      zone_id: task.zone_id,
+      plant_id: task.plant_id,
+    })),
+    recent_issues: urgentIssues.map((issue) => ({
+      diagnosis: issue.diagnosis,
+      severity: issue.severity,
+      confidence: issue.confidence,
+      symptoms: issue.symptoms,
+      zone_id: issue.zone_id,
+      plant_id: issue.plant_id,
+    })),
+    recent_observations: observations.slice(0, 8).map((observation) => ({
+      kind: observation.kind,
+      caption: observation.caption,
+      confidence: observation.confidence,
+      created_at: observation.created_at,
+      zone_id: observation.zone_id,
+      plant_id: observation.plant_id,
+    })),
+    device_readings: deviceReadings.slice(0, 8).map((reading) => ({
+      kind: reading.kind,
+      value: reading.value,
+      unit: reading.unit,
+      observed_at: reading.observed_at,
+      zone_id: reading.zone_id,
+    })),
+  }), [selectedGarden, selectedZone, selectedPlant, zones.length, plants.length, openTasks, urgentIssues, observations, deviceReadings]);
 
   useEffect(() => {
-    if (user) loadConversations();
-  }, [user]);
+    if (user) {
+      void loadWorkspace(activeGardenId);
+      void loadConversations();
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, streaming]);
+
+  useEffect(() => {
+    if (selectedPlantId && !visiblePlants.some((plant) => plant.id === selectedPlantId)) {
+      setSelectedPlantId(null);
+    }
+  }, [selectedPlantId, visiblePlants]);
+
+  async function loadWorkspace(preferredGardenId?: string | null) {
+    if (!user) return;
+    setWorkspaceLoading(true);
+    try {
+      const { data: gardenRows, error } = await supabase
+        .from("gardens")
+        .select("id,name,address,area_m2,thumbnail_url,latitude,longitude")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+
+      const nextGardens = (gardenRows ?? []) as Garden[];
+      setGardens(nextGardens);
+      const nextGardenId =
+        nextGardens.find((garden) => garden.id === preferredGardenId)?.id ??
+        nextGardens.find((garden) => garden.id === activeGardenId)?.id ??
+        nextGardens[0]?.id ??
+        null;
+      setSelectedGardenId(nextGardenId);
+      if (nextGardenId) {
+        setActive(nextGardenId);
+        await loadGardenDetails(nextGardenId);
+      } else {
+        setZones([]);
+        setPlants([]);
+        setTasks([]);
+        setObservations([]);
+        setHealthLogs([]);
+        setDeviceReadings([]);
+      }
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Kunne ikke hente haven");
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }
+
+  async function loadGardenDetails(gardenId: string) {
+    if (!user) return;
+    const [
+      { data: zoneRows },
+      { data: plantRows },
+      { data: taskRows },
+      { data: observationRows },
+      { data: healthRows },
+      { data: deviceRows },
+    ] = await Promise.all([
+      supabase
+        .from("garden_zones")
+        .select("id,garden_id,name,type,area_m2,sun_exposure,soil")
+        .eq("garden_id", gardenId)
+        .order("name"),
+      supabase
+        .from("user_plants")
+        .select("*,plants_catalog(name_da,water_need,image_url)")
+        .eq("garden_id", gardenId)
+        .order("last_observed_at", { ascending: false, nullsFirst: false }),
+      supabase
+        .from("task_log")
+        .select("id,title,kind,due_at,done,priority,reason,source,zone_id,plant_id,observation_id")
+        .eq("garden_id", gardenId)
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .limit(80),
+      supabase
+        .from("garden_observations")
+        .select("id,kind,image_url,caption,confidence,created_at,zone_id,plant_id,ai_result,anchor")
+        .eq("garden_id", gardenId)
+        .order("created_at", { ascending: false })
+        .limit(80),
+      supabase
+        .from("plant_health_log")
+        .select("id,diagnosis,severity,confidence,created_at,symptoms,treatment,prevention,zone_id,plant_id,observation_id")
+        .eq("garden_id", gardenId)
+        .order("created_at", { ascending: false })
+        .limit(60),
+      supabase
+        .from("device_readings")
+        .select("id,kind,value,unit,observed_at,zone_id,device_id,data")
+        .eq("garden_id", gardenId)
+        .order("observed_at", { ascending: false })
+        .limit(30),
+    ]);
+
+    const nextZones = (zoneRows ?? []) as Zone[];
+    const nextPlants = (plantRows ?? []) as Plant[];
+    setZones(nextZones);
+    setPlants(nextPlants);
+    setTasks((taskRows ?? []) as Task[]);
+    setObservations((observationRows ?? []) as Observation[]);
+    setHealthLogs((healthRows ?? []) as HealthLog[]);
+    setDeviceReadings((deviceRows ?? []) as DeviceReading[]);
+
+    setSelectedZoneId((current) => current && nextZones.some((zone) => zone.id === current) ? current : null);
+    setSelectedPlantId((current) => current && nextPlants.some((plant) => plant.id === current) ? current : null);
+  }
 
   async function loadConversations() {
     const { data } = await supabase
@@ -58,6 +478,8 @@ export default function PlantCareAI() {
 
   async function loadMessages(convId: string) {
     setActiveConv(convId);
+    setLastScan(null);
+    setLastAssistantText("");
     const { data } = await supabase
       .from("chat_messages")
       .select("role, content")
@@ -69,21 +491,241 @@ export default function PlantCareAI() {
   function newConversation() {
     setActiveConv(null);
     setMessages([]);
+    setLastScan(null);
+    setLastAssistantText("");
+  }
+
+  async function handleGardenChange(gardenId: string) {
+    setSelectedGardenId(gardenId);
+    setSelectedZoneId(null);
+    setSelectedPlantId(null);
+    setActive(gardenId);
+    setWorkspaceLoading(true);
+    try {
+      await loadGardenDetails(gardenId);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }
+
+  async function onPickImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Billedet er for stort. Maksimum er 8 MB.");
+      event.target.value = "";
+      return;
+    }
+    try {
+      setPendingFile(file);
+      setPendingImage(await fileToDataUrl(file));
+      if (careMode === "coach" || careMode === "season") setCareMode("diagnose");
+    } catch {
+      toast.error("Kunne ikke læse billedet");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function analyzeAndPersistImage(imageDataUrl: string, file: File | null, note: string, mode: CareMode): Promise<ScanBundle> {
+    const effectiveMode = mode === "identify" || mode === "growth" || mode === "diagnose" ? mode : "diagnose";
+    let imageUrl: string | null = null;
+    let observationId: string | null = null;
+    const garden = selectedGarden;
+    const zone = selectedZone;
+    const plant = selectedPlant;
+
+    if (file) {
+      try {
+        imageUrl = await uploadPlantPhoto(user!.id, file);
+      } catch (error: unknown) {
+        toast.error(error instanceof Error ? error.message : "Billedet blev analyseret, men kunne ikke gemmes");
+      }
+    }
+
+    const anchor = garden
+      ? mapAnchor(garden.id, zone?.id ?? null, plant?.id ?? null, 0.5, 0.5, zone ? "zone_center" : "unknown")
+      : null;
+
+    if (garden) {
+      const { data, error } = await supabase
+        .from("garden_observations")
+        .insert({
+          user_id: user!.id,
+          garden_id: garden.id,
+          zone_id: zone?.id ?? null,
+          plant_id: plant?.id ?? null,
+          kind: scanKind(effectiveMode),
+          image_url: imageUrl,
+          anchor: (anchor ?? {}) as Json,
+          ai_result: { status: "analyzing", mode: effectiveMode, note } as Json,
+          caption: note || defaultPromptForMode(effectiveMode),
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      observationId = data.id;
+    }
+
+    const context = {
+      garden_id: garden?.id ?? null,
+      garden_name: garden?.name ?? null,
+      zone_id: zone?.id ?? null,
+      zone_name: zone?.name ?? null,
+      plant_id: plant?.id ?? null,
+      plant_name: plantLabel(plant),
+      observation_id: observationId,
+      image_url: imageUrl,
+      selected_context: contextSnapshot,
+    };
+
+    const scan: ScanBundle = {
+      mode: effectiveMode,
+      gardenId: garden?.id ?? null,
+      zoneId: zone?.id ?? null,
+      plantId: plant?.id ?? null,
+      observationId,
+      imageUrl,
+    };
+
+    if (effectiveMode === "identify") {
+      const { data: catalog } = await supabase.from("plants_catalog").select("slug,name_da,latin").limit(300);
+      const { data, error } = await supabase.functions.invoke("identify-plant", {
+        body: { image: imageDataUrl, catalog: catalog ?? [], context },
+      });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      scan.identify = data as IdentifyResult;
+      if (observationId) {
+        await supabase
+          .from("garden_observations")
+          .update({
+            ai_result: scan.identify as Json,
+            confidence: asNumberConfidence(scan.identify?.confidence),
+            caption: scan.identify?.name_da ?? note ?? "Identificeret plante",
+          })
+          .eq("id", observationId);
+      }
+      return scan;
+    }
+
+    if (effectiveMode === "growth") {
+      const previous = observations
+        .filter((observation) =>
+          observation.kind === "growth" &&
+          (plant ? observation.plant_id === plant.id : zone ? observation.zone_id === zone.id : true)
+        )
+        .slice(0, 6)
+        .map((observation) => ({
+          created_at: observation.created_at,
+          caption: observation.caption,
+          ai_result: observation.ai_result,
+        }));
+      const { data, error } = await supabase.functions.invoke("analyze-growth", {
+        body: { imageDataUrl, note, context: { ...context, previous } },
+      });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      scan.growth = (data ?? {}) as GrowthResult;
+      if (observationId) {
+        await supabase
+          .from("garden_observations")
+          .update({
+            ai_result: scan.growth as Json,
+            confidence: asNumberConfidence(scan.growth.confidence),
+            caption: String(scan.growth.summary || note || "Væksttjek"),
+          })
+          .eq("id", observationId);
+      }
+      if (garden) {
+        await supabase.from("plant_growth_snapshots").insert({
+          user_id: user!.id,
+          garden_id: garden.id,
+          zone_id: zone?.id ?? null,
+          plant_id: plant?.id ?? null,
+          observation_id: observationId,
+          stage: scan.growth.stage ? String(scan.growth.stage) : null,
+          vigor: scan.growth.vigor ? String(scan.growth.vigor) : null,
+          estimated_height_cm: typeof scan.growth.estimated_height_cm === "number" ? scan.growth.estimated_height_cm : null,
+          flowering: typeof scan.growth.flowering === "boolean" ? scan.growth.flowering : null,
+          fruiting: typeof scan.growth.fruiting === "boolean" ? scan.growth.fruiting : null,
+          harvest_readiness: scan.growth.harvest_readiness ? String(scan.growth.harvest_readiness) : null,
+          anomaly_flags: Array.isArray(scan.growth.anomaly_flags) ? scan.growth.anomaly_flags.map(String) : [],
+          ai_result: scan.growth as Json,
+        });
+        if (plant) {
+          await supabase.from("user_plants").update({
+            lifecycle_status: scan.growth.stage ? String(scan.growth.stage) : "observed",
+            last_observed_at: new Date().toISOString(),
+          }).eq("id", plant.id);
+        }
+        if (observationId) {
+          const growthActions = actionsFromGrowth(garden.id, scan.growth, observationId, zone?.id ?? null, plant?.id ?? null);
+          if (growthActions.length > 0) {
+            const { data: insertedTasks } = await supabase
+              .from("task_log")
+              .insert(taskRowsFromActions(user!.id, growthActions))
+              .select("id");
+            scan.taskId = insertedTasks?.[0]?.id ?? null;
+          }
+        }
+      }
+      return scan;
+    }
+
+    const { data, error } = await supabase.functions.invoke("plant-diagnose", {
+      body: { imageDataUrl, note, context },
+    });
+    if (error) throw error;
+    if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+    scan.diagnosis = data as Diagnosis;
+    if (observationId) {
+      await supabase
+        .from("garden_observations")
+        .update({
+          ai_result: scan.diagnosis as Json,
+          confidence: asNumberConfidence(scan.diagnosis.confidence),
+          caption: scan.diagnosis.diagnosis ?? note ?? "Plantesygdom analyseret",
+        })
+        .eq("id", observationId);
+    }
+    if (garden && observationId && scan.diagnosis) {
+      const normalized = normalizeScanResult(scan.diagnosis as Record<string, unknown>);
+      if (plant) {
+        await supabase.from("user_plants").update({
+          health_status: normalized.severity === "low" ? "ok" : "watch",
+          last_observed_at: new Date().toISOString(),
+        }).eq("id", plant.id);
+      }
+      const task = actionFromScan(garden.id, normalized, observationId, zone?.id ?? null, plant?.id ?? null);
+      if (task) {
+        const { data: insertedTask } = await supabase
+          .from("task_log")
+          .insert(taskRowsFromActions(user!.id, [task])[0])
+          .select("id")
+          .single();
+        scan.taskId = insertedTask?.id ?? null;
+      }
+    }
+    return scan;
   }
 
   async function send(text: string) {
     const trimmed = text.trim();
     if ((!trimmed && !pendingImage) || streaming || !user) return;
+    const prompt = trimmed || defaultPromptForMode(careMode);
     setInput("");
     const imageDataUrl = pendingImage;
+    const imageFile = pendingFile;
     setPendingImage(null);
+    setPendingFile(null);
 
     const content: string | ContentPart[] = imageDataUrl
       ? [
-          { type: "text", text: trimmed || "Hvad er der galt med denne plante?" },
+          { type: "text", text: prompt },
           { type: "image_url", image_url: { url: imageDataUrl } },
         ]
-      : trimmed;
+      : prompt;
 
     const userMsg: Msg = { role: "user", content };
     const history = [...messages, userMsg];
@@ -91,13 +733,13 @@ export default function PlantCareAI() {
     setStreaming(true);
 
     let convId = activeConv;
+    let scan: ScanBundle | null = null;
+
     try {
-      // Create conversation if none
       if (!convId) {
-        const title = (trimmed || "Billed-diagnose").slice(0, 60);
         const { data, error } = await supabase
           .from("chat_conversations")
-          .insert({ user_id: user.id, title })
+          .insert({ user_id: user.id, title: compactTitle(prompt, imageDataUrl ? "Plantefoto" : "Plantepleje") })
           .select("id")
           .single();
         if (error) throw error;
@@ -105,42 +747,56 @@ export default function PlantCareAI() {
         setActiveConv(convId);
       }
 
-      // Persist user message (text-only summary; we don't store image in DB)
-      const persistedText = imageDataUrl
-        ? `[📷 Billede vedhæftet] ${trimmed}`.trim()
-        : trimmed;
       await supabase.from("chat_messages").insert({
         conversation_id: convId,
         user_id: user.id,
         role: "user",
-        content: persistedText,
+        content: imageDataUrl ? `[Foto: ${modeLabel(careMode)}] ${prompt}` : prompt,
       });
 
-      // If image present, run structured diagnosis in parallel for a richer card
-      let diagnosis: Diagnosis | null = null;
       if (imageDataUrl) {
-        try {
-          const { data: dx } = await supabase.functions.invoke("plant-diagnose", {
-            body: { imageDataUrl, note: trimmed },
-          });
-          if (dx && !(dx as any).error) diagnosis = dx as Diagnosis;
-        } catch (e) { console.warn("diagnose failed", e); }
+        scan = await analyzeAndPersistImage(imageDataUrl, imageFile, prompt, careMode);
+        setLastScan(scan);
+        if (selectedGardenId) await loadGardenDetails(selectedGardenId);
       }
 
-      // Call edge function with streaming
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/plant-care-chat`;
+      const accessToken = session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       const resp = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${accessToken}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ messages: history, hasImage: !!imageDataUrl, diagnosis }),
+        body: JSON.stringify({
+          messages: serializeMessages(history),
+          hasImage: !!imageDataUrl,
+          mode: careMode,
+          diagnosis: scan?.diagnosis ?? null,
+          identify: scan?.identify ?? null,
+          growth: scan?.growth ?? null,
+          uiContext: contextSnapshot,
+        }),
       });
 
-      if (resp.status === 429) { toast.error("For mange beskeder — prøv igen om lidt."); setStreaming(false); return; }
-      if (resp.status === 402) { toast.error("AI-kreditter opbrugt."); setStreaming(false); return; }
-      if (!resp.ok || !resp.body) { toast.error("AI-tjenesten svarer ikke."); setStreaming(false); return; }
+      if (!resp.ok || !resp.body) {
+        if (resp.status === 429) toast.error("For mange beskeder. Prøv igen om lidt.");
+        else if (resp.status === 402) toast.error("AI-kreditter er opbrugt.");
+        else toast.error("AI-tjenesten svarer ikke. Jeg gemte det lokale resultat.");
+        const fallback = fallbackAssistant(scan, careMode);
+        setMessages((prev) => [...prev, { role: "assistant", content: fallback, diagnosis: scan?.diagnosis ?? undefined, scan }]);
+        setLastAssistantText(fallback);
+        if (convId) {
+          await supabase.from("chat_messages").insert({
+            conversation_id: convId,
+            user_id: user.id,
+            role: "assistant",
+            content: fallback,
+          });
+        }
+        return;
+      }
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -148,11 +804,11 @@ export default function PlantCareAI() {
       let assistantText = "";
       let done = false;
 
-      setMessages(prev => [...prev, { role: "assistant", content: "", diagnosis: diagnosis ?? undefined }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "", diagnosis: scan?.diagnosis ?? undefined, scan }]);
 
       while (!done) {
-        const { done: d, value } = await reader.read();
-        if (d) break;
+        const { done: streamDone, value } = await reader.read();
+        if (streamDone) break;
         buffer += decoder.decode(value, { stream: true });
 
         let nl: number;
@@ -162,23 +818,28 @@ export default function PlantCareAI() {
           if (line.endsWith("\r")) line = line.slice(0, -1);
           if (!line.startsWith("data: ")) continue;
           const json = line.slice(6).trim();
-          if (json === "[DONE]") { done = true; break; }
+          if (json === "[DONE]") {
+            done = true;
+            break;
+          }
           try {
             const parsed = JSON.parse(json);
             const delta = parsed.choices?.[0]?.delta?.content;
             if (delta) {
               assistantText += delta;
-              setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantText } : m));
+              setMessages((prev) => prev.map((message, index) =>
+                index === prev.length - 1 ? { ...message, content: assistantText } : message
+              ));
             }
           } catch {
-            buffer = line + "\n" + buffer;
+            buffer = `${line}\n${buffer}`;
             break;
           }
         }
       }
 
-      // Persist assistant
-      if (assistantText) {
+      if (assistantText && convId) {
+        setLastAssistantText(assistantText);
         await supabase.from("chat_messages").insert({
           conversation_id: convId,
           user_id: user.id,
@@ -189,11 +850,11 @@ export default function PlantCareAI() {
           .from("chat_conversations")
           .update({ updated_at: new Date().toISOString() })
           .eq("id", convId);
-        loadConversations();
+        void loadConversations();
       }
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e.message ?? "Noget gik galt.");
+    } catch (error: unknown) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Noget gik galt");
     } finally {
       setStreaming(false);
     }
@@ -202,8 +863,152 @@ export default function PlantCareAI() {
   async function deleteConv(id: string) {
     await supabase.from("chat_messages").delete().eq("conversation_id", id);
     await supabase.from("chat_conversations").delete().eq("id", id);
-    if (activeConv === id) { setActiveConv(null); setMessages([]); }
-    loadConversations();
+    if (activeConv === id) newConversation();
+    void loadConversations();
+  }
+
+  async function addIdentifiedPlant(scan = lastScan) {
+    if (!user || !scan?.identify) return;
+    const gardenId = scan.gardenId ?? selectedGardenId;
+    if (!gardenId) {
+      toast.error("Opret en have først");
+      return;
+    }
+    setActionBusy("add-plant");
+    try {
+      const candidateSlug = scan.identify.candidate_slugs?.[0] ?? null;
+      const anchor = mapAnchor(gardenId, scan.zoneId, null, 0.5, 0.5, scan.zoneId ? "zone_center" : "unknown");
+      const { data, error } = await supabase
+        .from("user_plants")
+        .insert({
+          user_id: user.id,
+          garden_id: gardenId,
+          zone_id: scan.zoneId,
+          plant_slug: candidateSlug,
+          custom_name: candidateSlug ? null : scan.identify.name_da ?? "Ny plante",
+          qty: 1,
+          image_url: scan.imageUrl,
+          notes: scan.identify.care_tip ?? scan.identify.suggested_zone_fit ?? null,
+          map_position: anchor as Json,
+          lifecycle_status: "observed",
+          health_status: "unknown",
+          last_observed_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      if (scan.observationId) {
+        await supabase
+          .from("garden_observations")
+          .update({ plant_id: data.id, anchor: mapAnchor(gardenId, scan.zoneId, data.id, 0.5, 0.5, scan.zoneId ? "zone_center" : "unknown") as Json })
+          .eq("id", scan.observationId);
+      }
+      setLastScan({ ...scan, plantCreatedId: data.id });
+      await loadGardenDetails(gardenId);
+      toast.success("Planten er tilføjet til haven");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Kunne ikke tilføje planten");
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function createTaskFromAdvice(source: "assistant" | "followup" = "assistant") {
+    if (!user || !selectedGardenId) {
+      toast.error("Vælg en have først");
+      return;
+    }
+    const text = source === "followup"
+      ? `Følg op på ${scanSummary(lastScan)} med et nyt foto og vurder om problemet er bedre.`
+      : lastAssistantText || latestAssistantContent(messages);
+    if (!text.trim()) {
+      toast.error("Der er ikke noget AI-råd at gemme endnu");
+      return;
+    }
+    setActionBusy(source === "followup" ? "followup" : "task");
+    try {
+      const dueDays = source === "followup" ? 3 : 1;
+      const { data, error } = await supabase
+        .from("task_log")
+        .insert({
+          user_id: user.id,
+          garden_id: selectedGardenId,
+          zone_id: selectedZoneId,
+          plant_id: selectedPlantId,
+          observation_id: lastScan?.observationId ?? null,
+          kind: source === "followup" ? "issue_resolution" : "ai_advice",
+          title: source === "followup" ? `Følg op: ${scanSummary(lastScan)}` : compactTitle(text),
+          notes: text.slice(0, 1200),
+          due_at: new Date(Date.now() + dueDays * 86400_000).toISOString(),
+          priority: source === "followup" || lastScan?.diagnosis?.severity === "high" ? "high" : "normal",
+          source: lastScan ? "scan" : "ai",
+          reason: source === "followup" ? "Plantepleje AI anbefaler at lukke løkken med et nyt tjek." : "Oprettet fra Plantepleje AI-råd.",
+          confidence: scanConfidence(lastScan),
+          payload: {
+            mode: careMode,
+            resolution_state: source === "followup" ? "watching" : undefined,
+            scan_summary: scanSummary(lastScan),
+          } as Json,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      setTasks((prev) => [{
+        id: data.id,
+        title: source === "followup" ? `Følg op: ${scanSummary(lastScan)}` : compactTitle(text),
+        kind: source === "followup" ? "issue_resolution" : "ai_advice",
+        due_at: new Date(Date.now() + dueDays * 86400_000).toISOString(),
+        done: false,
+        priority: source === "followup" ? "high" : "normal",
+        reason: null,
+        source: lastScan ? "scan" : "ai",
+        zone_id: selectedZoneId,
+        plant_id: selectedPlantId,
+        observation_id: lastScan?.observationId ?? null,
+      }, ...prev]);
+      toast.success(source === "followup" ? "Opfølgning er oprettet" : "Opgaven er oprettet");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Kunne ikke oprette opgave");
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function saveAdviceToJournal() {
+    if (!user || !selectedGardenId) {
+      toast.error("Vælg en have først");
+      return;
+    }
+    const text = lastAssistantText || latestAssistantContent(messages);
+    if (!text.trim() && !lastScan) {
+      toast.error("Der er ikke noget at gemme endnu");
+      return;
+    }
+    setActionBusy("journal");
+    try {
+      const { error } = await supabase.from("garden_journal").insert({
+        user_id: user.id,
+        garden_id: selectedGardenId,
+        zone_id: selectedZoneId,
+        plant_id: selectedPlantId,
+        kind: lastScan?.diagnosis ? "disease" : "note",
+        caption: compactTitle(text || scanSummary(lastScan), scanSummary(lastScan)),
+        image_url: lastScan?.imageUrl ?? null,
+        data: {
+          source: "plant-care-ai",
+          mode: careMode,
+          assistant_text: text,
+          scan: lastScan,
+          observation_id: lastScan?.observationId ?? null,
+        } as Json,
+      });
+      if (error) throw error;
+      toast.success("Gemt i journalen");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Kunne ikke gemme i journalen");
+    } finally {
+      setActionBusy(null);
+    }
   }
 
   if (authLoading) return null;
@@ -212,16 +1017,15 @@ export default function PlantCareAI() {
     return (
       <>
         <AppNav active="ai" />
-        <div className="container">
-          <header className="page-head">
-            <div className="eyebrow" style={{ marginBottom: 14 }}>Plantepleje AI</div>
-            <h1>Log ind for at spørge</h1>
-            <p className="lede">Din samtalehistorik gemmes så du altid kan vende tilbage.</p>
-          </header>
-          <div style={{ padding: "20px 0 80px" }}>
+        <main className="plant-ai-page container">
+          <section className="plant-ai-auth">
+            <Sparkles size={28} />
+            <span className="plant-ai-eyebrow">Plantepleje AI</span>
+            <h1>Log ind for at få plantepleje med din have som kontekst.</h1>
+            <p>AI'en kan gemme diagnoser, opgaver og journalnoter, når den kender din have.</p>
             <Link to="/login" className="btn btn-primary">Log ind</Link>
-          </div>
-        </div>
+          </section>
+        </main>
         <SiteFooter />
       </>
     );
@@ -230,207 +1034,432 @@ export default function PlantCareAI() {
   return (
     <>
       <AppNav active="ai" />
-      <div className="container" style={{ paddingBottom: 40 }}>
-        <header className="page-head">
-          <div className="eyebrow" style={{ marginBottom: 14 }}>Plantepleje AI</div>
-          <h1>Spørg om alt. Den kender din have.</h1>
-          <p className="lede">Beskæring, gødning, sygdomme, sæsonpleje — på dansk, med konkrete svar.</p>
+      <main className="plant-ai-page container">
+        <header className="plant-ai-hero">
+          <div>
+            <span className="plant-ai-eyebrow"><Sparkles size={14} /> Plantepleje AI</span>
+            <h1>Et plantepleje-center der kan se, forstå og handle i din have.</h1>
+            <p>
+              Tag et foto, vælg bed eller plante, og få råd der kan gemmes direkte som observation,
+              opgave, journalnote eller plante i Havekompagnon.
+            </p>
+            <div className="plant-ai-hero-actions">
+              <button className="btn btn-primary" onClick={() => cameraInputRef.current?.click()}>
+                <Camera size={16} /> Tag foto
+              </button>
+              <button className="btn btn-ghost" onClick={() => navigate("/havekompagnon")}>
+                <MapPinned size={16} /> Havekompagnon
+              </button>
+              <button className="btn btn-ghost" onClick={() => navigate("/havemaaler")}>
+                <Ruler size={16} /> Havemåler
+              </button>
+            </div>
+          </div>
+          <div className="plant-ai-live-panel">
+            <div className="plant-ai-live-top">
+              <Leaf size={18} />
+              <span>{selectedGarden?.name ?? "Ingen have valgt"}</span>
+            </div>
+            <div className="plant-ai-metrics">
+              <Metric label="Planter" value={plants.length} />
+              <Metric label="Åbne opgaver" value={openTasks.length} tone={openTasks.length > 6 ? "warn" : "ok"} />
+              <Metric label="Risici" value={urgentIssues.length} tone={urgentIssues.length ? "risk" : "ok"} />
+              <Metric label="Sensorer" value={deviceReadings.length} />
+            </div>
+          </div>
         </header>
 
-        <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 24, alignItems: "start" }}>
-          {/* Sidebar */}
-          <aside style={{
-            background: "var(--paper)",
-            border: "1px solid var(--ink-100)",
-            borderRadius: 16,
-            padding: 16,
-            position: "sticky",
-            top: 24,
-            maxHeight: "calc(100vh - 48px)",
-            overflowY: "auto",
-          }}>
-            <button onClick={newConversation} className="btn btn-primary btn-sm" style={{ width: "100%", marginBottom: 16 }}>
-              + Ny samtale
+        {workspaceLoading && gardens.length === 0 ? (
+          <div className="plant-ai-loading">
+            <Loader2 className="spin" size={20} /> Henter din havekontekst...
+          </div>
+        ) : gardens.length === 0 ? (
+          <section className="plant-ai-empty">
+            <Sprout size={30} />
+            <h2>Opret en have for at aktivere den fulde AI.</h2>
+            <p>Du kan stadig chatte, men Plantepleje AI bliver langt bedre, når den kan bruge dine bede, planter, opgaver og fotos.</p>
+            <button className="btn btn-primary" onClick={() => navigate("/havemaaler")}>
+              <Ruler size={16} /> Start med Havemåler
             </button>
-            <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--ink-500)", marginBottom: 8 }}>
-              Historik
-            </div>
-            {conversations.length === 0 && (
-              <div style={{ fontSize: 13, color: "var(--ink-500)" }}>Ingen samtaler endnu.</div>
-            )}
-            {conversations.map(c => (
-              <div
-                key={c.id}
-                style={{
-                  display: "flex",
-                  gap: 6,
-                  alignItems: "center",
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  background: activeConv === c.id ? "var(--ink-50)" : "transparent",
-                  marginBottom: 2,
-                }}
-                onClick={() => loadMessages(c.id)}
-              >
-                <div style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {c.title}
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteConv(c.id); }}
-                  style={{ background: "none", border: "none", color: "var(--ink-500)", cursor: "pointer", fontSize: 14, padding: 2 }}
-                  aria-label="Slet"
-                >×</button>
-              </div>
-            ))}
-          </aside>
+          </section>
+        ) : (
+          <div className="plant-ai-shell">
+            <aside className="plant-ai-sidebar">
+              <button onClick={newConversation} className="plant-ai-new">
+                <Plus size={16} /> Ny samtale
+              </button>
 
-          {/* Chat */}
-          <section style={{
-            background: "var(--paper)",
-            border: "1px solid var(--ink-100)",
-            borderRadius: 20,
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 600,
-            maxHeight: "calc(100vh - 48px)",
-          }}>
-            <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
-              {messages.length === 0 ? (
+              <div className="plant-ai-field">
+                <label>Have</label>
+                <select value={selectedGardenId ?? ""} onChange={(event) => void handleGardenChange(event.target.value)}>
+                  {gardens.map((garden) => <option key={garden.id} value={garden.id}>{garden.name}</option>)}
+                </select>
+              </div>
+
+              <div className="plant-ai-field">
+                <label>Bed eller zone</label>
+                <select
+                  value={selectedZoneId ?? "all"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setSelectedZoneId(value === "all" ? null : value);
+                    setSelectedPlantId(null);
+                  }}
+                >
+                  <option value="all">Hele haven</option>
+                  {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
+                </select>
+              </div>
+
+              <div className="plant-ai-field">
+                <label>Plante</label>
+                <select
+                  value={selectedPlantId ?? "all"}
+                  onChange={(event) => setSelectedPlantId(event.target.value === "all" ? null : event.target.value)}
+                >
+                  <option value="all">Ingen specifik plante</option>
+                  {visiblePlants.map((plant) => <option key={plant.id} value={plant.id}>{plantLabel(plant)}</option>)}
+                </select>
+              </div>
+
+              <div className="plant-ai-mode-list" aria-label="AI tilstande">
+                {CARE_MODES.map(({ key, label, hint, icon: Icon }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={careMode === key ? "active" : ""}
+                    onClick={() => setCareMode(key)}
+                  >
+                    <Icon size={16} />
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{hint}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="plant-ai-history-head">
+                <span>Historik</span>
+                <button type="button" onClick={() => void loadConversations()} aria-label="Genindlæs historik">
+                  <RefreshCcw size={13} />
+                </button>
+              </div>
+              <div className="plant-ai-history">
+                {conversations.length === 0 && <p>Ingen samtaler endnu.</p>}
+                {conversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    className={activeConv === conversation.id ? "active" : ""}
+                    onClick={() => void loadMessages(conversation.id)}
+                  >
+                    <MessageCircle size={14} />
+                    <span>{conversation.title}</span>
+                    <i
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Slet samtale"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void deleteConv(conversation.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void deleteConv(conversation.id);
+                        }
+                      }}
+                    >
+                      <X size={13} />
+                    </i>
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            <section className="plant-ai-chat-card">
+              <div className="plant-ai-chat-head">
                 <div>
-                  <h3 style={{ marginTop: 0, fontSize: 22 }}>Hvad kan jeg hjælpe med?</h3>
-                  <p style={{ color: "var(--ink-500)", marginBottom: 24 }}>Prøv et af disse — eller stil dit eget spørgsmål.</p>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {STARTERS.map(s => (
-                      <button
-                        key={s}
-                        onClick={() => send(s)}
-                        style={{
-                          textAlign: "left",
-                          padding: "14px 18px",
-                          background: "var(--ink-50)",
-                          border: "1px solid var(--ink-100)",
-                          borderRadius: 12,
-                          cursor: "pointer",
-                          fontSize: 14,
-                          color: "var(--ink-900)",
-                        }}
-                      >{s}</button>
-                    ))}
-                  </div>
+                  <span>{modeLabel(careMode)}</span>
+                  <strong>{zoneLabel(selectedZone)} · {plantLabel(selectedPlant)}</strong>
                 </div>
-              ) : (
-                messages.map((m, i) => {
-                  const text = typeof m.content === "string"
-                    ? m.content
-                    : (m.content.find((p) => p.type === "text") as any)?.text ?? "";
-                  const img = typeof m.content === "string"
-                    ? null
-                    : (m.content.find((p) => p.type === "image_url") as any)?.image_url?.url;
-                  const isLastAssistant = m.role === "assistant" && i === messages.length - 1 && !streaming && text;
-                  return (
-                    <div key={i} style={{ marginBottom: 22, display: "flex", gap: 12 }}>
-                      <div style={{
-                        width: 32, height: 32, borderRadius: 16, flexShrink: 0,
-                        background: m.role === "user" ? "var(--forest-800)" : "var(--ochre-600)",
-                        color: "white",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 13, fontWeight: 600,
-                      }}>
-                        {m.role === "user" ? "Du" : "🌿"}
-                      </div>
-                      <div style={{ flex: 1, paddingTop: 4 }}>
-                        {img && (
-                          <img src={img} alt="vedhæftet" style={{ maxWidth: 240, borderRadius: 10, marginBottom: 10, display: "block" }} />
-                        )}
-                        <div className="prose-chat" style={{ fontSize: 15, lineHeight: 1.65, color: "var(--ink-900)" }}>
-                          {m.role === "assistant" ? (
-                            <>
-                              {m.diagnosis && <div style={{ marginBottom: 14 }}><DiagnosisCard d={m.diagnosis} /></div>}
-                              <ReactMarkdown>{text || (m.diagnosis ? "" : "…")}</ReactMarkdown>
-                            </>
-                          ) : (
-                            <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate("/havekompagnon")}>
+                  <MapPinned size={14} /> Åbn kort
+                </button>
+              </div>
+
+              <div ref={scrollRef} className="plant-ai-chat-scroll">
+                {messages.length === 0 ? (
+                  <div className="plant-ai-start">
+                    <div className="plant-ai-start-icon"><Leaf size={28} /></div>
+                    <h2>Hvad skal vi hjælpe planten med?</h2>
+                    <p>Vælg en arbejdsgang, tag et foto eller start med et af forslagene.</p>
+                    <div className="plant-ai-starters">
+                      {starters.map((starter) => (
+                        <button key={starter} type="button" onClick={() => void send(starter)} disabled={streaming}>
+                          <ArrowRight size={15} />
+                          <span>{starter}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="plant-ai-context-chips">
+                      <span><MapPinned size={13} /> {zoneLabel(selectedZone)}</span>
+                      <span><Sprout size={13} /> {plantLabel(selectedPlant)}</span>
+                      <span><ClipboardList size={13} /> {openTasks.length} åbne opgaver</span>
+                    </div>
+                  </div>
+                ) : (
+                  messages.map((message, index) => {
+                    const textValue = messageText(message.content);
+                    const img = messageImage(message.content);
+                    const isLastAssistant = message.role === "assistant" && index === messages.length - 1 && !streaming && textValue;
+                    return (
+                      <article key={`${message.role}-${index}`} className={`plant-ai-message ${message.role}`}>
+                        <div className="plant-ai-avatar">
+                          {message.role === "user" ? "Du" : <Leaf size={16} />}
+                        </div>
+                        <div className="plant-ai-bubble">
+                          {img && <img src={img} alt="Vedhæftet plantefoto" className="plant-ai-message-image" />}
+                          {message.diagnosis && <DiagnosisCard d={message.diagnosis} />}
+                          {message.scan?.identify && (
+                            <IdentifyCard
+                              result={message.scan.identify}
+                              created={Boolean(message.scan.plantCreatedId)}
+                              busy={actionBusy === "add-plant"}
+                              onAdd={() => void addIdentifiedPlant(message.scan)}
+                            />
+                          )}
+                          {message.scan?.growth && <GrowthCard result={message.scan.growth} />}
+                          <div className="prose-chat">
+                            {message.role === "assistant"
+                              ? <ReactMarkdown>{textValue || (message.diagnosis || message.scan ? "" : "...")}</ReactMarkdown>
+                              : <div>{textValue}</div>}
+                          </div>
+                          {isLastAssistant && (
+                            <div className="plant-ai-inline-actions">
+                              <button type="button" onClick={() => void createTaskFromAdvice("assistant")} disabled={Boolean(actionBusy)}>
+                                <ClipboardList size={14} /> Opret opgave
+                              </button>
+                              <button type="button" onClick={() => void saveAdviceToJournal()} disabled={Boolean(actionBusy)}>
+                                <NotebookPen size={14} /> Gem journal
+                              </button>
+                              <button type="button" onClick={() => navigate("/havekompagnon")}>
+                                <MapPinned size={14} /> Se i Havekompagnon
+                              </button>
+                            </div>
                           )}
                         </div>
-                        {isLastAssistant && (
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/havekompagnon")}>💧 Åbn Havekompagnon</button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/webshop")}>🛒 Find i shop</button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate("/havemaaler")}>📐 Mål have</button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {pendingImage && (
-              <div style={{ borderTop: "1px solid var(--ink-100)", padding: "10px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-                <img src={pendingImage} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8 }} />
-                <span style={{ fontSize: 13, color: "var(--ink-500)", flex: 1 }}>Billede klar — beskriv evt. symptomerne</span>
-                <button onClick={() => setPendingImage(null)} className="btn btn-ghost btn-sm">Fjern</button>
+                      </article>
+                    );
+                  })
+                )}
               </div>
-            )}
 
-            <form
-              onSubmit={(e) => { e.preventDefault(); send(input); }}
-              style={{ borderTop: "1px solid var(--ink-100)", padding: 16, display: "flex", gap: 10, alignItems: "center" }}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={onPickImage}
-                style={{ display: "none" }}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="btn btn-ghost"
-                disabled={streaming}
-                aria-label="Vedhæft billede"
-                style={{ padding: "10px 14px" }}
-              >📷</button>
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={pendingImage ? "Beskriv hvad du ser…" : "Spørg om beskæring, sygdomme, gødning…"}
-                disabled={streaming}
-                style={{
-                  flex: 1,
-                  padding: "12px 16px",
-                  border: "1px solid var(--ink-100)",
-                  borderRadius: 12,
-                  fontSize: 15,
-                  background: "var(--ink-50)",
-                  outline: "none",
-                }}
-              />
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={streaming || (!input.trim() && !pendingImage)}
-              >
-                {streaming ? "…" : "Send"}
-              </button>
-            </form>
-          </section>
-        </div>
-      </div>
+              {pendingImage && (
+                <div className="plant-ai-pending">
+                  <img src={pendingImage} alt="Klar til analyse" />
+                  <div>
+                    <strong>Foto klar til {modeLabel(careMode).toLowerCase()}</strong>
+                    <span>{zoneLabel(selectedZone)} · {plantLabel(selectedPlant)}</span>
+                  </div>
+                  <button type="button" onClick={() => { setPendingImage(null); setPendingFile(null); }}>
+                    <X size={15} /> Fjern
+                  </button>
+                </div>
+              )}
 
-      <style>{`
-        .prose-chat p { margin: 0 0 10px; }
-        .prose-chat ul, .prose-chat ol { margin: 8px 0 12px; padding-left: 22px; }
-        .prose-chat li { margin: 4px 0; }
-        .prose-chat strong { color: var(--forest-800); }
-        .prose-chat h1, .prose-chat h2, .prose-chat h3 { margin: 16px 0 8px; }
-        .prose-chat code { background: var(--ink-50); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-      `}</style>
+              <form className="plant-ai-composer" onSubmit={(event) => { event.preventDefault(); void send(input); }}>
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={onPickImage}
+                  hidden
+                />
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={onPickImage}
+                  hidden
+                />
+                <button type="button" onClick={() => cameraInputRef.current?.click()} disabled={streaming} aria-label="Tag foto">
+                  <Camera size={18} />
+                </button>
+                <button type="button" onClick={() => uploadInputRef.current?.click()} disabled={streaming} aria-label="Upload foto">
+                  <Upload size={18} />
+                </button>
+                <input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder={pendingImage ? "Beskriv symptomer, placering eller hvad du vil have vurderet..." : "Spørg om beskæring, sygdom, jord, vækst, sæson eller pleje..."}
+                  disabled={streaming}
+                />
+                <button type="submit" className="send" disabled={streaming || (!input.trim() && !pendingImage)}>
+                  {streaming ? <Loader2 size={18} className="spin" /> : <Send size={18} />}
+                </button>
+              </form>
+            </section>
 
+            <aside className="plant-ai-rail">
+              <section>
+                <h3>Havekontekst</h3>
+                <div className="plant-ai-context-card">
+                  <MapPinned size={18} />
+                  <div>
+                    <strong>{selectedGarden?.name}</strong>
+                    <span>{selectedGarden?.address ?? `${zones.length} zoner · ${plants.length} planter`}</span>
+                  </div>
+                </div>
+                <div className="plant-ai-mini-list">
+                  <span><Sprout size={14} /> {zoneLabel(selectedZone)}</span>
+                  <span><Leaf size={14} /> {plantLabel(selectedPlant)}</span>
+                  <span><ClipboardList size={14} /> {openTasks.length} åbne opgaver</span>
+                </div>
+              </section>
+
+              <section>
+                <h3>Seneste scan</h3>
+                <div className="plant-ai-scan-card">
+                  {lastScan?.imageUrl ? <img src={lastScan.imageUrl} alt="Seneste scan" /> : <ImagePlus size={22} />}
+                  <div>
+                    <strong>{scanSummary(lastScan)}</strong>
+                    <span>{lastScan ? `${modeLabel(lastScan.mode)} · ${scanConfidence(lastScan) ? Math.round(scanConfidence(lastScan)! * 100) + "% sikkerhed" : "gemt observation"}` : "Tag et foto for at starte"}</span>
+                  </div>
+                </div>
+                {lastScan?.diagnosis && (
+                  <button className="plant-ai-action" onClick={() => void createTaskFromAdvice("followup")} disabled={Boolean(actionBusy)}>
+                    {actionBusy === "followup" ? <Loader2 className="spin" size={15} /> : <AlertTriangle size={15} />}
+                    Følg op om 3 dage
+                  </button>
+                )}
+                {lastScan?.identify && !lastScan.plantCreatedId && (
+                  <button className="plant-ai-action" onClick={() => void addIdentifiedPlant()} disabled={Boolean(actionBusy)}>
+                    {actionBusy === "add-plant" ? <Loader2 className="spin" size={15} /> : <Plus size={15} />}
+                    Tilføj plante
+                  </button>
+                )}
+              </section>
+
+              <section>
+                <h3>Gem videre</h3>
+                <div className="plant-ai-action-grid">
+                  <button onClick={() => void createTaskFromAdvice("assistant")} disabled={Boolean(actionBusy)}>
+                    <ClipboardList size={15} /> Opgave
+                  </button>
+                  <button onClick={() => void saveAdviceToJournal()} disabled={Boolean(actionBusy)}>
+                    <NotebookPen size={15} /> Journal
+                  </button>
+                  <button onClick={() => navigate("/havekompagnon")}>
+                    <MapPinned size={15} /> Kort
+                  </button>
+                  <button onClick={() => navigate("/vanding")}>
+                    <Leaf size={15} /> Plejeplan
+                  </button>
+                </div>
+              </section>
+
+              <section>
+                <h3>Næste opgaver</h3>
+                <div className="plant-ai-task-list">
+                  {openTasks.length === 0 && <p>Ingen åbne opgaver i denne have.</p>}
+                  {openTasks.slice(0, 5).map((task) => (
+                    <div key={task.id}>
+                      <Check size={14} />
+                      <span>{task.title}</span>
+                      <small>{formatDate(task.due_at)}</small>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <h3>Seneste fotos</h3>
+                <div className="plant-ai-photo-grid">
+                  {latestPhotos.length === 0 && <p>Ingen fotos endnu.</p>}
+                  {latestPhotos.map((photo) => (
+                    <img key={photo.id} src={photo.image_url ?? ""} alt={photo.caption ?? "Havefoto"} />
+                  ))}
+                </div>
+              </section>
+            </aside>
+          </div>
+        )}
+      </main>
       <SiteFooter />
     </>
+  );
+}
+
+function Metric({ label, value, tone }: { label: string; value: number; tone?: "ok" | "warn" | "risk" }) {
+  return (
+    <div className={tone ? `tone-${tone}` : ""}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function IdentifyCard({
+  result,
+  created,
+  busy,
+  onAdd,
+}: {
+  result: IdentifyResult;
+  created: boolean;
+  busy: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="plant-ai-result-card">
+      <div className="plant-ai-result-head">
+        <Sprout size={17} />
+        <div>
+          <span>Identifikation</span>
+          <strong>{result.name_da ?? "Ukendt plante"}</strong>
+          {result.latin && <small>{result.latin}</small>}
+        </div>
+      </div>
+      <p>{result.care_tip ?? "Gem observationen og tag et ekstra foto, hvis du er i tvivl."}</p>
+      <div className="plant-ai-result-tags">
+        {result.category && <span>{result.category}</span>}
+        {result.water_need && <span>Vand: {result.water_need}</span>}
+        {result.sun && <span>Lys: {result.sun}</span>}
+      </div>
+      <button type="button" onClick={onAdd} disabled={created || busy}>
+        {busy ? <Loader2 className="spin" size={14} /> : created ? <Check size={14} /> : <Plus size={14} />}
+        {created ? "Tilføjet til haven" : "Tilføj som plante"}
+      </button>
+    </div>
+  );
+}
+
+function GrowthCard({ result }: { result: GrowthResult }) {
+  const flags = Array.isArray(result.anomaly_flags) ? result.anomaly_flags.map(String) : [];
+  return (
+    <div className="plant-ai-result-card">
+      <div className="plant-ai-result-head">
+        <Activity size={17} />
+        <div>
+          <span>Væksttjek</span>
+          <strong>{String(result.summary ?? result.trend ?? "Observation gemt")}</strong>
+          <small>{result.stage ? `Stadie: ${String(result.stage)}` : "Gentag foto fra samme vinkel for bedre trend"}</small>
+        </div>
+      </div>
+      <div className="plant-ai-growth-grid">
+        <span><strong>{String(result.vigor ?? "ukendt")}</strong> Vigor</span>
+        <span><strong>{String(result.harvest_readiness ?? "ikke vurderet")}</strong> Høst</span>
+      </div>
+      {flags.length > 0 && (
+        <div className="plant-ai-result-tags">
+          {flags.map((flag) => <span key={flag}>{flag}</span>)}
+        </div>
+      )}
+      {result.next_action && <p>{String(result.next_action)}</p>}
+    </div>
   );
 }
