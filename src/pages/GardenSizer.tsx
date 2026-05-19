@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Link, useNavigate } from "react-router-dom";
 
-import { unionRings, subtractRings, pixelDistance } from "@/lib/polygonOps";
+import { addRingToSet, pixelDistance } from "@/lib/polygonOps";
 import {
   buildSegmentationCacheKey,
   isBlockingLawnSegmentationWarning,
@@ -32,6 +32,7 @@ type WandOp = "replace" | "add" | "subtract";
 type WandReviewMode = "none" | "add" | "remove";
 type WandStage = "idle" | "Henter billede" | "Finder græs" | "Tegner kant" | "Klar til tjek";
 type Imagery = "ortofoto" | "mapbox";
+type EditableRingId = "main" | `lawn:${number}` | `excl:${number}`;
 
 const AUTOSAVE_KEY = "havemaaler:draft:v2";
 const WAND_CROP_METERS = 36;
@@ -80,10 +81,12 @@ export default function GardenSizer() {
   // Polygon state
   const [main, setMain] = useState<Ring>([]);
   const [mainClosed, setMainClosed] = useState(false);
+  const [additionalLawns, setAdditionalLawns] = useState<Ring[]>([]);
+  const [currentLawn, setCurrentLawn] = useState<Ring>([]);
   const [exclusions, setExclusions] = useState<Ring[]>([]);
   const [currentExclusion, setCurrentExclusion] = useState<Ring>([]);
   const [hover, setHover] = useState<LngLat | null>(null);
-  const [draggingVertex, setDraggingVertex] = useState<{ ring: "main" | number; idx: number } | null>(null);
+  const [draggingVertex, setDraggingVertex] = useState<{ ring: EditableRingId; idx: number } | null>(null);
 
   const [matrikel, setMatrikel] = useState<Ring | null>(null);
   const [wandLoading, setWandLoading] = useState(false);
@@ -102,12 +105,18 @@ export default function GardenSizer() {
   const [pinpointing, setPinpointing] = useState<{ name: string; center: LngLat } | null>(null);
 
   // History (undo/redo)
-  type Snap = { main: Ring; mainClosed: boolean; exclusions: Ring[] };
+  type Snap = { main: Ring; mainClosed: boolean; additionalLawns: Ring[]; currentLawn: Ring; exclusions: Ring[] };
   const historyRef = useRef<{ past: Snap[]; future: Snap[] }>({ past: [], future: [] });
   const skipHistoryRef = useRef(false);
 
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const completedLawns = useMemo(
+    () => (mainClosed && main.length >= 3 ? [main, ...additionalLawns] : []),
+    [main, mainClosed, additionalLawns],
+  );
+  const lawnZoneCount = completedLawns.length;
+  const totalLawnCorners = completedLawns.reduce((sum, ring) => sum + ring.length, 0) + (!mainClosed ? main.length : currentLawn.length);
 
   // ----- Tokens -----
   useEffect(() => {
@@ -166,7 +175,7 @@ export default function GardenSizer() {
 
   function chooseAddress(s: Suggestion) {
     setQuery(s.place_name); setOpen(false);
-    setMain([]); setMainClosed(false); setExclusions([]); setCurrentExclusion([]);
+    setMain([]); setMainClosed(false); setAdditionalLawns([]); setCurrentLawn([]); setExclusions([]); setCurrentExclusion([]);
     clearWandPreview();
     setMatrikel(null);
     // Trigger cinematic pinpoint; finalises into step 2 in onDone
@@ -318,15 +327,48 @@ export default function GardenSizer() {
 
   // ----- Map event handlers (read latest state via refs) -----
   const stateRef = useRef({
-    mode, main, mainClosed, exclusions, currentExclusion, draggingVertex,
-    matrikel, wandLoading, wandOp, wandPreview, wandCrop, wandSeeds, wandReviewMode, wandStage,
+    mode, main, mainClosed, additionalLawns, currentLawn, exclusions, currentExclusion, draggingVertex,
+    matrikel, wandLoading, wandOp, wandPreview, wandCrop, wandSeeds, wandReviewMode, wandStage, snapEnabled,
   });
   useEffect(() => {
     stateRef.current = {
-      mode, main, mainClosed, exclusions, currentExclusion, draggingVertex,
-      matrikel, wandLoading, wandOp, wandPreview, wandCrop, wandSeeds, wandReviewMode, wandStage,
+      mode, main, mainClosed, additionalLawns, currentLawn, exclusions, currentExclusion, draggingVertex,
+      matrikel, wandLoading, wandOp, wandPreview, wandCrop, wandSeeds, wandReviewMode, wandStage, snapEnabled,
     };
   });
+
+  function setCompletedLawnRings(rings: Ring[]) {
+    const clean = rings.filter((r) => r.length >= 3);
+    if (!clean.length) {
+      setMain([]);
+      setMainClosed(false);
+      setAdditionalLawns([]);
+      setCurrentLawn([]);
+      return;
+    }
+    setMain(clean[0]);
+    setMainClosed(true);
+    setAdditionalLawns(clean.slice(1));
+    setCurrentLawn([]);
+  }
+
+  function addCompletedLawn(ring: Ring) {
+    const s = stateRef.current;
+    const base = s.mainClosed && s.main.length >= 3 ? [s.main, ...s.additionalLawns] : [];
+    setCompletedLawnRings(addRingToSet(base, ring));
+  }
+
+  function updateEditableRing(ring: EditableRingId, updater: (ring: Ring) => Ring) {
+    if (ring === "main") {
+      setMain((prev) => updater(prev));
+    } else if (ring.startsWith("lawn:")) {
+      const idx = Number(ring.slice(5));
+      setAdditionalLawns((prev) => prev.map((r, i) => i === idx ? updater(r) : r));
+    } else {
+      const idx = Number(ring.slice(5));
+      setExclusions((prev) => prev.map((r, i) => i === idx ? updater(r) : r));
+    }
+  }
 
   function onMapClick(e: mapboxgl.MapMouseEvent) {
     const map = mapRef.current!;
@@ -351,25 +393,25 @@ export default function GardenSizer() {
       const mid = feats.find(f => (f.properties as any)?.midpoint);
       if (mid) {
         const idx = (mid.properties as any).insertAt as number;
-        const ring = (mid.properties as any).ring as string;
-        if (ring === "main") {
-          setMain(p => { const n = [...p]; n.splice(idx, 0, ll); return n; });
-        } else {
-          const ri = parseInt(ring, 10);
-          setExclusions(prev => prev.map((r, i) => i === ri ? (() => { const n = [...r]; n.splice(idx, 0, ll); return n; })() : r));
-        }
+        const ring = (mid.properties as any).ring as EditableRingId;
+        updateEditableRing(ring, (prev) => { const n = [...prev]; n.splice(idx, 0, ll); return n; });
       }
       return;
     }
 
     if (s.mode === "draw") {
-      if (s.mainClosed) return;
-      if (s.main.length >= 3) {
-        const start = map.project(s.main[0] as any);
+      const drawingRing = s.mainClosed ? s.currentLawn : s.main;
+      if (drawingRing.length >= 3) {
+        const start = map.project(drawingRing[0] as any);
         const cur = map.project(ll as any);
-        if (Math.hypot(start.x - cur.x, start.y - cur.y) < 14) { setMainClosed(true); return; }
+        if (Math.hypot(start.x - cur.x, start.y - cur.y) < 14) {
+          if (s.mainClosed) addCompletedLawn(drawingRing);
+          else setMainClosed(true);
+          return;
+        }
       }
-      setMain(p => [...p, ll]);
+      if (s.mainClosed) setCurrentLawn(p => [...p, ll]);
+      else setMain(p => [...p, ll]);
     } else if (s.mode === "exclude") {
       if (!s.mainClosed) { toast("Tegn græsplænen først"); return; }
       if (s.currentExclusion.length >= 3) {
@@ -389,6 +431,9 @@ export default function GardenSizer() {
     e.preventDefault();
     const s = stateRef.current;
     if (s.mode === "draw" && s.main.length >= 3 && !s.mainClosed) setMainClosed(true);
+    else if (s.mode === "draw" && s.mainClosed && s.currentLawn.length >= 3) {
+      addCompletedLawn(s.currentLawn);
+    }
     else if (s.mode === "exclude" && s.currentExclusion.length >= 3) {
       setExclusions(prev => [...prev, s.currentExclusion]);
       setCurrentExclusion([]);
@@ -403,9 +448,9 @@ export default function GardenSizer() {
     const real = feats.find(f => !(f.properties as any)?.midpoint);
     if (!real) return;
     e.preventDefault();
-    const ring = (real.properties as any).ring as string;
+    const ring = (real.properties as any).ring as EditableRingId;
     const idx = (real.properties as any).idx as number;
-    deleteVertex(ring === "main" ? "main" : parseInt(ring, 10), idx);
+    deleteVertex(ring, idx);
     if ((navigator as any).vibrate) (navigator as any).vibrate(20);
   }
 
@@ -415,9 +460,9 @@ export default function GardenSizer() {
     const feats = map.queryRenderedFeatures(e.point, { layers: ["vertices-circle"] });
     const real = feats.find(f => !(f.properties as any)?.midpoint);
     if (!real) return;
-    const ring = (real.properties as any).ring as string;
+    const ring = (real.properties as any).ring as EditableRingId;
     const idx = (real.properties as any).idx as number;
-    setDraggingVertex({ ring: ring === "main" ? "main" : parseInt(ring, 10), idx });
+    setDraggingVertex({ ring, idx });
     map.dragPan.disable();
     e.preventDefault();
   }
@@ -435,12 +480,7 @@ export default function GardenSizer() {
     if (s.draggingVertex) {
       let dragLL = ll;
       if (s.mode === "edit") dragLL = snapPoint(ll);
-      if (s.draggingVertex.ring === "main") {
-        setMain(p => p.map((v, i) => i === s.draggingVertex!.idx ? dragLL : v));
-      } else {
-        const ri = s.draggingVertex.ring as number;
-        setExclusions(prev => prev.map((r, i) => i === ri ? r.map((v, j) => j === s.draggingVertex!.idx ? dragLL : v) : r));
-      }
+      updateEditableRing(s.draggingVertex.ring, (ring) => ring.map((v, i) => i === s.draggingVertex!.idx ? dragLL : v));
     }
   }
 
@@ -455,16 +495,28 @@ export default function GardenSizer() {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
 
-    // Main polygon (or live preview line)
-    const liveRing = mainClosed ? [...main, main[0]]
-      : (hover && main.length > 0 && mode === "draw") ? [...main, hover] : main;
+    // Lawn polygons (completed rings plus the live ring currently being drawn)
     const polyData: any = { type: "FeatureCollection", features: [] };
-    if (main.length >= 2) {
+    if (mainClosed && main.length >= 3) {
+      [main, ...additionalLawns].forEach((r, i) => {
+        polyData.features.push({
+          type: "Feature",
+          properties: { lawnIndex: i },
+          geometry: { type: "Polygon", coordinates: [[...r, r[0]]] },
+        });
+      });
+    } else if (main.length >= 2) {
+      const liveRing = (hover && mode === "draw") ? [...main, hover] : main;
       polyData.features.push({
         type: "Feature", properties: {},
-        geometry: mainClosed
-          ? { type: "Polygon", coordinates: [liveRing] }
-          : { type: "LineString", coordinates: liveRing },
+        geometry: { type: "LineString", coordinates: liveRing },
+      });
+    }
+    if (mainClosed && currentLawn.length >= 2) {
+      const liveLawn = (hover && mode === "draw") ? [...currentLawn, hover] : currentLawn;
+      polyData.features.push({
+        type: "Feature", properties: { draft: true },
+        geometry: { type: "LineString", coordinates: liveLawn },
       });
     }
     (map.getSource("polygon") as mapboxgl.GeoJSONSource)?.setData(polyData);
@@ -504,13 +556,16 @@ export default function GardenSizer() {
       }
     };
     if (main.length) pushRing(main, "main");
-    exclusions.forEach((r, i) => pushRing(r, String(i)));
+    additionalLawns.forEach((r, i) => pushRing(r, `lawn:${i}`));
+    if (mode === "draw" && mainClosed && currentLawn.length) pushRing(currentLawn, "draft");
+    exclusions.forEach((r, i) => pushRing(r, `excl:${i}`));
     (map.getSource("vertices") as mapboxgl.GeoJSONSource)?.setData(vData);
 
-    // Edge labels (only when actively drawing or editing main, and >=2 pts)
+    // Edge labels for the active drawing ring or all completed lawns in edit mode.
     const labelData: any = { type: "FeatureCollection", features: [] };
-    if (main.length >= 2 && (mode === "draw" || mode === "edit")) {
-      const ring = mainClosed ? [...main, main[0]] : main;
+    const pushLabels = (sourceRing: Ring, closedRing: boolean) => {
+      if (sourceRing.length < 2) return;
+      const ring = closedRing ? [...sourceRing, sourceRing[0]] : sourceRing;
       for (let i = 0; i < ring.length - 1; i++) {
         const a = ring[i], b = ring[i + 1];
         const len = turf.distance(a, b, { units: "kilometers" }) * 1000;
@@ -520,6 +575,12 @@ export default function GardenSizer() {
           geometry: { type: "Point", coordinates: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] },
         });
       }
+    };
+    if (mode === "draw") {
+      pushLabels(mainClosed ? currentLawn : main, false);
+    } else if (mode === "edit") {
+      if (mainClosed) [main, ...additionalLawns].forEach((r) => pushLabels(r, true));
+      else pushLabels(main, false);
     }
     (map.getSource("edge-labels") as mapboxgl.GeoJSONSource)?.setData(labelData);
 
@@ -576,49 +637,53 @@ export default function GardenSizer() {
     (map.getSource("wand-preview-exclusions") as mapboxgl.GeoJSONSource)?.setData(wandPreviewExclusionsData);
   }
 
-  useEffect(() => { syncMap(); }, [main, mainClosed, exclusions, currentExclusion, hover, mode, matrikel, snapIndicator, wandHoverPos, wandBbox, wandPreview]);
+  useEffect(() => { syncMap(); }, [main, mainClosed, additionalLawns, currentLawn, exclusions, currentExclusion, hover, mode, matrikel, snapIndicator, wandHoverPos, wandBbox, wandPreview]);
 
-  // ----- Area / perimeter (with exclusions subtracted) -----
-  const { area, perim } = useMemo(() => {
-    if (!mainClosed || main.length < 3) return { area: 0, perim: 0 };
-    let poly: any = turf.polygon([[...main, main[0]]]);
-    exclusions.forEach(r => {
-      if (r.length < 3) return;
-      try {
-        const ex = turf.polygon([[...r, r[0]]]);
-        const diff = turf.difference(turf.featureCollection([poly, ex]) as any);
-        if (diff) poly = diff;
-      } catch {}
+  // ----- Area / perimeter (multiple lawns with exclusions subtracted) -----
+  const { area, perim, lawnAreas } = useMemo(() => {
+    const areas = completedLawns.map((ring) => {
+      let poly: any = turf.polygon([[...ring, ring[0]]]);
+      exclusions.forEach(r => {
+        if (r.length < 3) return;
+        try {
+          const ex = turf.polygon([[...r, r[0]]]);
+          const diff = turf.difference(turf.featureCollection([poly, ex]) as any);
+          if (diff) poly = diff;
+        } catch {}
+      });
+      return turf.area(poly);
     });
-    const a = turf.area(poly);
-    const ringLen = turf.length(turf.lineString([...main, main[0]]), { units: "kilometers" }) * 1000;
-    return { area: a, perim: ringLen };
-  }, [main, mainClosed, exclusions]);
+    const totalArea = areas.reduce((sum, value) => sum + value, 0);
+    const totalPerim = completedLawns.reduce((sum, ring) => (
+      sum + turf.length(turf.lineString([...ring, ring[0]]), { units: "kilometers" }) * 1000
+    ), 0);
+    return { area: totalArea, perim: totalPerim, lawnAreas: areas };
+  }, [completedLawns, exclusions]);
 
   const tier = TIERS.find((t) => area <= t.max) ?? TIERS[TIERS.length - 1];
 
   // ----- History (undo/redo) -----
-  type Snap2 = { main: Ring; mainClosed: boolean; exclusions: Ring[] };
+  type Snap2 = { main: Ring; mainClosed: boolean; additionalLawns: Ring[]; currentLawn: Ring; exclusions: Ring[] };
   const lastSerialized = useRef<string>("");
   function applySnap(s: Snap2) {
     skipHistoryRef.current = true;
-    setMain(s.main); setMainClosed(s.mainClosed); setExclusions(s.exclusions);
+    setMain(s.main); setMainClosed(s.mainClosed); setAdditionalLawns(s.additionalLawns ?? []); setCurrentLawn(s.currentLawn ?? []); setExclusions(s.exclusions);
     requestAnimationFrame(() => { skipHistoryRef.current = false; });
   }
   function undo() {
     const h = historyRef.current;
     if (!h.past.length) return;
-    h.future.push({ main: [...main], mainClosed, exclusions: exclusions.map(r => [...r]) });
+    h.future.push({ main: [...main], mainClosed, additionalLawns: additionalLawns.map(r => [...r]), currentLawn: [...currentLawn], exclusions: exclusions.map(r => [...r]) });
     applySnap(h.past.pop()!);
   }
   function redo() {
     const h = historyRef.current;
     if (!h.future.length) return;
-    h.past.push({ main: [...main], mainClosed, exclusions: exclusions.map(r => [...r]) });
+    h.past.push({ main: [...main], mainClosed, additionalLawns: additionalLawns.map(r => [...r]), currentLawn: [...currentLawn], exclusions: exclusions.map(r => [...r]) });
     applySnap(h.future.pop()!);
   }
   useEffect(() => {
-    const ser = JSON.stringify({ main, mainClosed, exclusions });
+    const ser = JSON.stringify({ main, mainClosed, additionalLawns, currentLawn, exclusions });
     if (ser === lastSerialized.current) return;
     if (!skipHistoryRef.current && lastSerialized.current) {
       try {
@@ -628,10 +693,10 @@ export default function GardenSizer() {
       } catch {}
     }
     lastSerialized.current = ser;
-  }, [main, mainClosed, exclusions]);
+  }, [main, mainClosed, additionalLawns, currentLawn, exclusions]);
 
   function clear() {
-    setMain([]); setMainClosed(false); setExclusions([]); setCurrentExclusion([]);
+    setMain([]); setMainClosed(false); setAdditionalLawns([]); setCurrentLawn([]); setExclusions([]); setCurrentExclusion([]);
     setWandConfidence(null); setWandBbox(null); clearWandPreview();
   }
 
@@ -646,12 +711,15 @@ export default function GardenSizer() {
 
   // ----- Snap helper -----
   function snapPoint(ll: LngLat): LngLat {
-    if (!snapEnabled) return ll;
     const map = mapRef.current; if (!map) return ll;
+    const s = stateRef.current;
+    if (!s.snapEnabled) return ll;
     const candidates: LngLat[] = [];
-    main.forEach(p => candidates.push(p));
-    exclusions.forEach(r => r.forEach(p => candidates.push(p)));
-    if (matrikel) matrikel.forEach(p => candidates.push(p));
+    s.main.forEach(p => candidates.push(p));
+    s.additionalLawns.forEach(r => r.forEach(p => candidates.push(p)));
+    s.currentLawn.forEach(p => candidates.push(p));
+    s.exclusions.forEach(r => r.forEach(p => candidates.push(p)));
+    if (s.matrikel) s.matrikel.forEach(p => candidates.push(p));
     let best: { p: LngLat; d: number } | null = null;
     for (const c of candidates) {
       const d = pixelDistance(map, ll, c);
@@ -662,12 +730,8 @@ export default function GardenSizer() {
     return ll;
   }
 
-  function deleteVertex(ring: "main" | number, idx: number) {
-    if (ring === "main") {
-      setMain(p => p.length > 3 ? p.filter((_, i) => i !== idx) : p);
-    } else {
-      setExclusions(prev => prev.map((r, i) => i === ring ? (r.length > 3 ? r.filter((_, j) => j !== idx) : r) : r));
-    }
+  function deleteVertex(ring: EditableRingId, idx: number) {
+    updateEditableRing(ring, (prev) => prev.length > 3 ? prev.filter((_, i) => i !== idx) : prev);
   }
 
   // ----- Matrikel lookup -----
@@ -688,7 +752,7 @@ export default function GardenSizer() {
 
   function useMatrikelAsBase() {
     if (!matrikel) return;
-    setMain(matrikel); setMainClosed(true); setExclusions([]); setCurrentExclusion([]);
+    setMain(matrikel); setMainClosed(true); setAdditionalLawns([]); setCurrentLawn([]); setExclusions([]); setCurrentExclusion([]);
     setMode("edit");
   }
 
@@ -888,16 +952,15 @@ export default function GardenSizer() {
       return;
     }
     const ring = result.polygon;
+    const cleanExclusions = result.exclusions.filter((r) => r.length >= 3);
     if (s.wandOp === "add" && s.main.length >= 3 && s.mainClosed) {
-      const merged = unionRings(s.main, ring);
-      if (merged) setMain(merged); else { toast("Områderne overlapper ikke"); return; }
+      addCompletedLawn(ring);
+      if (cleanExclusions.length) setExclusions((prev) => [...prev, ...cleanExclusions]);
     } else if (s.wandOp === "subtract" && s.main.length >= 3 && s.mainClosed) {
-      const sub = subtractRings(s.main, ring);
-      if (sub) setMain(sub); else { toast("Kunne ikke trække fra"); return; }
+      setExclusions((prev) => [...prev, ring]);
     } else {
-      setMain(ring);
-      setMainClosed(true);
-      setExclusions(result.exclusions.filter((r) => r.length >= 3));
+      setCompletedLawnRings([ring]);
+      setExclusions(cleanExclusions);
     }
     if (s.wandCrop) {
       writeAcceptedSegmentationCache(buildSegmentationCacheKey(s.wandCrop, s.wandSeeds), result);
@@ -905,8 +968,8 @@ export default function GardenSizer() {
     logHavemaalerSegmentationEvent("havemaaler_wand_accept", s.wandCrop, result, s.wandSeeds, { accepted: true, action: s.wandOp });
     setWandConfidence(result.confidence);
     clearWandPreview();
-    setMode("edit");
-    toast.success("Plænen er sat ind og klar til redigering");
+    setMode(s.wandOp === "replace" ? "edit" : "wand");
+    toast.success(s.wandOp === "add" ? "Græszonen er tilføjet" : s.wandOp === "subtract" ? "Området er udeladt" : "Plænen er sat ind og klar til redigering");
   }
 
   function manualEditFromWand() {
@@ -931,15 +994,18 @@ export default function GardenSizer() {
       if (e.key === "z" || e.key === "Z") { e.preventDefault(); undo(); return; }
       if (e.key === "Delete" || e.key === "Backspace") {
         if (mode === "exclude" && currentExclusion.length) { setCurrentExclusion(p => p.slice(0, -1)); e.preventDefault(); }
+        else if (mode === "draw" && mainClosed && currentLawn.length) { setCurrentLawn(p => p.slice(0, -1)); e.preventDefault(); }
         else if (mode === "draw" && main.length && !mainClosed) { setMain(p => p.slice(0, -1)); e.preventDefault(); }
         return;
-	      }
-	      if (e.key === "Escape") {
-	        if (mode === "wand" && wandPreview) clearWandPreview();
-	        else if (mode === "exclude" && currentExclusion.length) setCurrentExclusion([]);
-	        else if (!mainClosed) setMain([]);
+      }
+      if (e.key === "Escape") {
+        if (mode === "wand" && wandPreview) clearWandPreview();
+        else if (mode === "exclude" && currentExclusion.length) setCurrentExclusion([]);
+        else if (mode === "draw" && currentLawn.length) setCurrentLawn([]);
+        else if (!mainClosed) setMain([]);
       } else if (e.key === "Enter") {
         if (mode === "draw" && main.length >= 3 && !mainClosed) setMainClosed(true);
+        else if (mode === "draw" && mainClosed && currentLawn.length >= 3) addCompletedLawn(currentLawn);
         else if (mode === "exclude" && currentExclusion.length >= 3) {
           setExclusions(prev => [...prev, currentExclusion]); setCurrentExclusion([]);
         }
@@ -951,7 +1017,7 @@ export default function GardenSizer() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-	  }, [step, mode, main, mainClosed, currentExclusion, exclusions, wandPreview]);
+  }, [step, mode, main, mainClosed, currentLawn, currentExclusion, exclusions, wandPreview]);
 
   // ----- Autosave to localStorage -----
   useEffect(() => {
@@ -959,12 +1025,12 @@ export default function GardenSizer() {
     const t = setTimeout(() => {
       try {
         localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
-          chosen, main, mainClosed, exclusions, imagery, savedAt: Date.now(),
+          chosen, main, mainClosed, additionalLawns, currentLawn, exclusions, imagery, savedAt: Date.now(),
         }));
       } catch {}
     }, 800);
     return () => clearTimeout(t);
-  }, [step, chosen, main, mainClosed, exclusions, imagery]);
+  }, [step, chosen, main, mainClosed, additionalLawns, currentLawn, exclusions, imagery]);
 
   // Restore draft on mount
   useEffect(() => {
@@ -975,6 +1041,8 @@ export default function GardenSizer() {
       if (!d?.chosen || Date.now() - (d.savedAt ?? 0) > 1000 * 60 * 60 * 24 * 3) return;
       setChosen(d.chosen);
       setMain(d.main ?? []); setMainClosed(!!d.mainClosed);
+      setAdditionalLawns(d.additionalLawns ?? []);
+      setCurrentLawn(d.currentLawn ?? []);
       setExclusions(d.exclusions ?? []);
       if (d.imagery) setImagery(d.imagery);
       setStep(2);
@@ -1003,7 +1071,10 @@ export default function GardenSizer() {
       }
     } catch {}
 
-    const polyGeo = { type: "Polygon", coordinates: [[...main, main[0]]] };
+    const polygonForRing = (ring: Ring) => ({ type: "Polygon", coordinates: [[...ring, ring[0]]] });
+    const gardenPolygon = completedLawns.length === 1
+      ? polygonForRing(completedLawns[0])
+      : { type: "MultiPolygon", coordinates: completedLawns.map((ring) => [[[...ring, ring[0]]]]) };
     const { data: g, error } = await supabase.from("gardens").insert({
       user_id: user.id,
       name: chosen.name.split(",")[0],
@@ -1011,16 +1082,22 @@ export default function GardenSizer() {
       latitude: chosen.center[1],
       longitude: chosen.center[0],
       area_m2: Math.round(area),
-      polygon: polyGeo,
+      polygon: gardenPolygon,
       exclusions: exclusions.map(r => ({ type: "Polygon", coordinates: [[...r, r[0]]] })),
       imagery_source: imagery,
       thumbnail_url,
     }).select().single();
     if (error || !g) { toast.error("Kunne ikke gemme have"); setSaving(false); return; }
-    await supabase.from("garden_zones").insert({
-      user_id: user.id, garden_id: g.id, name: "Græsplæne", type: "lawn",
-      polygon: polyGeo, area_m2: Math.round(area),
-    });
+    const zoneRows = completedLawns.map((ring, i) => ({
+      user_id: user.id,
+      garden_id: g.id,
+      name: completedLawns.length === 1 ? "Græsplæne" : `Græsplæne ${i + 1}`,
+      type: "lawn" as const,
+      polygon: polygonForRing(ring),
+      area_m2: Math.round(lawnAreas[i] ?? turf.area(turf.polygon([[...ring, ring[0]]]))),
+    }));
+    const { error: zoneError } = await supabase.from("garden_zones").insert(zoneRows);
+    if (zoneError) { toast.error("Have gemt, men zonerne kunne ikke gemmes"); setSaving(false); return; }
     const { useActiveGarden } = await import("@/lib/activeGarden");
     useActiveGarden.getState().setActive(g.id);
     try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
@@ -1039,8 +1116,8 @@ export default function GardenSizer() {
       <div className={`container havemaaler-page ${step === 2 ? "is-measuring" : "is-addressing"}`}>
         <header className="page-head">
           <div className="eyebrow" style={{ marginBottom: 14 }}>Værktøj · Havemåler</div>
-          <h1>Tegn din græsplæne. Få den rette robotklipper.</h1>
-          <p className="lede">Indtast din adresse, og vi henter et 12,5 cm satellit-billede af din matrikel. Tegn — eller lad AI'en foreslå plænen.</p>
+          <h1>Tegn dine græsflader. Få den rette robotklipper.</h1>
+          <p className="lede">Indtast din adresse, og vi henter et 12,5 cm satellit-billede af din matrikel. Tegn flere græszoner — eller klik hver separat plæne med AI.</p>
         </header>
 
         {step === 1 && (
@@ -1088,7 +1165,7 @@ export default function GardenSizer() {
 
                 <div className="addr-meta">
                   <span>Dataforsyningen · 12,5 cm</span>
-                  <span>AI-magic-wand</span>
+                  <span>AI-græszoner</span>
                   <span>Matrikel-overlay</span>
                 </div>
               </div>
@@ -1147,17 +1224,17 @@ export default function GardenSizer() {
               <div>
                 <div className="canvas-host topview" style={{ position: "relative" }}>
                   <div ref={containerRef} style={{ width: "100%", height: "100%", position: "absolute", inset: 0, borderRadius: "inherit" }} />
-	                  <div className="help" style={{ zIndex: 2 }}>
-	                    <span className="dot"></span>
-	                    <span>
-	                      {mode === "wand" ? (wandLoading ? wandStage : wandPreview ? (
+                  <div className="help" style={{ zIndex: 2 }}>
+                    <span className="dot"></span>
+                    <span>
+                      {mode === "wand" ? (wandLoading ? wandStage : wandPreview ? (
                           wandReviewMode === "add" ? "Klik på græs der mangler"
                             : wandReviewMode === "remove" ? "Klik på område der skal væk"
                             : "Tjek kanten. Godkend, forfin eller skift til manuel redigering."
-                        ) : wandOp === "add" ? "Klik for at TILFØJE et område til plænen" : wandOp === "subtract" ? "Klik for at TRÆKKE et område fra plænen" : "Klik midt på græsset — vi finder plænekanten")
-	                        : mode === "edit" ? "Træk hjørner. Klik et lille punkt for at indsætte. Højreklik = slet hjørne."
-	                        : mode === "exclude" ? "Tegn et område der trækkes fra (terrasse, bed). Dobbeltklik for at lukke."
-	                        : mainClosed ? "Færdig — gem din have, eller skift til Rediger."
+                        ) : wandOp === "add" ? "Klik midt på en separat græsflade for at tilføje den som ny zone" : wandOp === "subtract" ? "Klik på fliser, terrasse eller bygning for at udelukke området" : "Klik midt på græsset — vi finder plænekanten")
+                        : mode === "edit" ? "Træk hjørner. Klik et lille punkt for at indsætte. Højreklik = slet hjørne."
+                        : mode === "exclude" ? "Tegn et område der trækkes fra (terrasse, bed). Dobbeltklik for at lukke."
+                        : mainClosed ? (currentLawn.length ? "Tegn den næste græszone. Luk ved første punkt, dobbeltklik eller Enter." : "Klik for at tegne en ekstra græszone, eller brug AI-zone til adskilte plæner.")
                         : "Klik for hjørner. Luk ved at klikke første punkt eller Enter. (Cmd/Ctrl+Z = fortryd, S = snap, Del = slet sidste)"}
                     </span>
                   </div>
@@ -1189,7 +1266,7 @@ export default function GardenSizer() {
 
                   <div className="area-pill" style={{ zIndex: 2 }}>
                     <div>
-                      <div className="lbl">Areal{exclusions.length ? ` (- ${exclusions.length} ekskl.)` : ""}</div>
+                      <div className="lbl">{lawnZoneCount} græszone{lawnZoneCount === 1 ? "" : "r"}{exclusions.length ? ` · ${exclusions.length} udeladt` : ""}</div>
                       <div>{area.toFixed(0)} m²</div>
                     </div>
 	                    {wandConfidence != null && (
@@ -1200,14 +1277,15 @@ export default function GardenSizer() {
 	                  </div>
 
                   <div className="tools measurement-tools" style={{ zIndex: 2, flexWrap: "wrap" }}>
-	                    <button className={`tool-btn ${mode === "draw" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("draw"); }} title="Tegn (1)">Tegn</button>
+	                    <button className={`tool-btn ${mode === "draw" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("draw"); }} title="Tegn græszone (1)">{mainClosed ? "+ Græszone" : "Tegn"}</button>
 	                    <button className={`tool-btn ${mode === "edit" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("edit"); }} disabled={!main.length} title="Rediger (2)">Rediger</button>
 	                    <button className={`tool-btn ${mode === "exclude" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("exclude"); }} disabled={!mainClosed} title="Udeluk (3)">− Udeluk</button>
-	                    <button className={`tool-btn ${mode === "wand" ? "is-active" : ""}`} onClick={() => { setMode("wand"); setWandOp("replace"); clearWandPreview(); }} disabled={wandLoading} title="AI-magic-wand (4)">{wandLoading ? "AI…" : "✨ AI"}</button>
+	                    <button className={`tool-btn ${mode === "wand" ? "is-active" : ""}`} onClick={() => { setMode("wand"); setWandOp(mainClosed ? "add" : "replace"); clearWandPreview(); }} disabled={wandLoading} title="AI-magic-wand (4)">{wandLoading ? "AI…" : mainClosed ? "✨ AI-zone" : "✨ AI"}</button>
 	                    {mode === "wand" && mainClosed && (
 	                      <>
-	                        <button className={`tool-btn ${wandOp === "add" ? "is-active" : ""}`} onClick={() => { setWandOp("add"); clearWandPreview(); }} disabled={wandLoading} title="AI tilføj område">+ AI</button>
-	                        <button className={`tool-btn ${wandOp === "subtract" ? "is-active" : ""}`} onClick={() => { setWandOp("subtract"); clearWandPreview(); }} disabled={wandLoading} title="AI træk fra">− AI</button>
+	                        <button className={`tool-btn ${wandOp === "replace" ? "is-active" : ""}`} onClick={() => { setWandOp("replace"); clearWandPreview(); }} disabled={wandLoading} title="AI erstat alle zoner">Erstat</button>
+	                        <button className={`tool-btn ${wandOp === "add" ? "is-active" : ""}`} onClick={() => { setWandOp("add"); clearWandPreview(); }} disabled={wandLoading} title="AI tilføj græszone">+ Zone</button>
+	                        <button className={`tool-btn ${wandOp === "subtract" ? "is-active" : ""}`} onClick={() => { setWandOp("subtract"); clearWandPreview(); }} disabled={wandLoading} title="AI udeluk område">− Udeluk</button>
 	                      </>
 	                    )}
                     <button className="tool-btn" onClick={undo} title="Fortryd (Cmd+Z)">↶</button>
@@ -1236,8 +1314,9 @@ export default function GardenSizer() {
                   }}>📍 Find mig</button>
                 </div>
 
-                <div className="sizer-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginTop: 24 }}>
-                  <div className="acct-stat"><div className="v">{main.length}</div><div className="l">Hjørner</div></div>
+                <div className="sizer-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 16, marginTop: 24 }}>
+                  <div className="acct-stat"><div className="v">{lawnZoneCount}</div><div className="l">Græszoner</div></div>
+                  <div className="acct-stat"><div className="v">{totalLawnCorners}</div><div className="l">Hjørner</div></div>
                   <div className="acct-stat"><div className="v">{perim.toFixed(0)} m</div><div className="l">Omkreds</div></div>
                   <div className="acct-stat"><div className="v">{area > 0 ? Math.ceil(area / 8) + " min" : "— min"}</div><div className="l">Estimeret klippetid</div></div>
                 </div>
@@ -1253,7 +1332,7 @@ export default function GardenSizer() {
                 </div>
 
                 <div className="rec-meta">
-                  <div className="cell"><div className="v">{area.toFixed(0)} m²</div><div className="l">Din plæne</div></div>
+                  <div className="cell"><div className="v">{area.toFixed(0)} m²</div><div className="l">Dine plæner</div></div>
                   <div className="cell"><div className="v">{tier.max} m²</div><div className="l">Klippekapacitet</div></div>
                   <div className="cell"><div className="v">{tier.battery}</div><div className="l">Batteritid</div></div>
                   <div className="cell"><div className="v">{tier.noise}</div><div className="l">Lydniveau</div></div>

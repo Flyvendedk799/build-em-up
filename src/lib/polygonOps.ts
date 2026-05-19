@@ -24,6 +24,58 @@ export function unionRings(a: Ring, b: Ring): Ring | null {
   } catch { return null; }
 }
 
+function polygonFromRing(ring: Ring) {
+  return turf.polygon([closed(ring)]);
+}
+
+function ringsFromGeometry(geom: any): Ring[] {
+  const coords = geom?.type === "Polygon"
+    ? [geom.coordinates[0]]
+    : geom?.type === "MultiPolygon"
+      ? geom.coordinates.map((p: any) => p[0])
+      : [];
+  return coords
+    .map((r: LngLat[]) => r.slice(0, -1))
+    .filter((r: Ring) => r.length >= 3)
+    .sort((a: Ring, b: Ring) => turf.area(polygonFromRing(b)) - turf.area(polygonFromRing(a)));
+}
+
+/** Add a lawn ring to a set, merging only when it touches/overlaps an existing lawn. */
+export function addRingToSet(rings: Ring[], incoming: Ring): Ring[] {
+  if (incoming.length < 3) return rings;
+  try {
+    let pending: Ring[] = [incoming];
+    const kept: Ring[] = [];
+
+    for (const existing of rings) {
+      let mergedExisting = false;
+      const nextPending: Ring[] = [];
+
+      for (const candidate of pending) {
+        const pe = polygonFromRing(existing);
+        const pc = polygonFromRing(candidate);
+        if (!mergedExisting && turf.booleanIntersects(pe as any, pc as any)) {
+          const union = turf.union(turf.featureCollection([pe, pc]) as any);
+          const pieces = union ? ringsFromGeometry((union as any).geometry) : [];
+          nextPending.push(...(pieces.length ? pieces : [candidate]));
+          mergedExisting = true;
+        } else {
+          nextPending.push(candidate);
+        }
+      }
+
+      pending = nextPending;
+      if (!mergedExisting) kept.push(existing);
+    }
+
+    return [...kept, ...pending]
+      .filter((r) => r.length >= 3)
+      .sort((a, b) => turf.area(polygonFromRing(b)) - turf.area(polygonFromRing(a)));
+  } catch {
+    return [...rings, incoming];
+  }
+}
+
 /** Subtract b from a; returns outer ring of largest piece, or null. */
 export function subtractRings(a: Ring, b: Ring): Ring | null {
   try {
