@@ -1,0 +1,1065 @@
+.plant-ai-page {
+  padding-top: 28px;
+  padding-bottom: 72px;
+}
+
+.plant-ai-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--forest-800);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.plant-ai-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
+  gap: 28px;
+  align-items: stretch;
+  margin-bottom: 22px;
+  padding: 30px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(239, 248, 236, .94), rgba(236, 244, 255, .86)),
+    #fff;
+  box-shadow: 0 18px 44px -38px rgba(20, 39, 29, .45);
+}
+
+.plant-ai-hero h1 {
+  max-width: 820px;
+  margin: 12px 0 0;
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.04;
+  letter-spacing: 0;
+  color: var(--ink-900);
+}
+
+.plant-ai-hero p {
+  max-width: 720px;
+  margin: 14px 0 0;
+  color: var(--ink-500);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.plant-ai-hero-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.plant-ai-hero-actions .btn,
+.plant-ai-chat-head .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.plant-ai-live-panel {
+  align-self: stretch;
+  display: grid;
+  align-content: space-between;
+  gap: 18px;
+  min-height: 220px;
+  padding: 18px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.88), rgba(248,251,246,.9)),
+    #fff;
+}
+
+.plant-ai-live-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--forest-800);
+  font-weight: 800;
+}
+
+.plant-ai-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.plant-ai-metrics div {
+  min-height: 84px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.plant-ai-metrics strong {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--ink-900);
+}
+
+.plant-ai-metrics span {
+  font-size: 12px;
+  color: var(--ink-500);
+}
+
+.plant-ai-metrics .tone-ok strong { color: #1f7a4d; }
+.plant-ai-metrics .tone-warn strong { color: #a15f00; }
+.plant-ai-metrics .tone-risk strong { color: #b42318; }
+
+.plant-ai-shell {
+  display: grid;
+  grid-template-columns: minmax(230px, 270px) minmax(0, 1fr) minmax(260px, 320px);
+  gap: 16px;
+  align-items: start;
+}
+
+.plant-ai-sidebar,
+.plant-ai-chat-card,
+.plant-ai-rail > section,
+.plant-ai-auth,
+.plant-ai-empty,
+.plant-ai-loading {
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 38px -34px rgba(20, 39, 29, .45);
+}
+
+.plant-ai-sidebar {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 14px;
+}
+
+.plant-ai-new {
+  width: 100%;
+  height: 42px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--forest-800);
+  color: #fff;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.plant-ai-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.plant-ai-field label,
+.plant-ai-history-head {
+  color: var(--ink-500);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.plant-ai-field select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid rgba(20, 39, 29, .12);
+  border-radius: 10px;
+  background: var(--ink-50);
+  color: var(--ink-900);
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+}
+
+.plant-ai-mode-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.plant-ai-mode-list button {
+  min-height: 60px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 10px;
+  background: #fff;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  color: var(--ink-500);
+  text-align: left;
+  cursor: pointer;
+}
+
+.plant-ai-mode-list button.active {
+  border-color: rgba(31, 122, 77, .36);
+  background: rgba(31, 122, 77, .07);
+  color: var(--forest-800);
+}
+
+.plant-ai-mode-list strong {
+  display: block;
+  color: var(--ink-900);
+  font-size: 13px;
+}
+
+.plant-ai-mode-list small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-500);
+  line-height: 1.35;
+}
+
+.plant-ai-history-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.plant-ai-history-head button {
+  border: 0;
+  background: transparent;
+  color: var(--ink-500);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.plant-ai-history {
+  display: grid;
+  gap: 4px;
+}
+
+.plant-ai-history p {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 13px;
+}
+
+.plant-ai-history > button {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-500);
+  font-size: 13px;
+  text-align: left;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.plant-ai-history > button.active {
+  background: var(--ink-50);
+  color: var(--ink-900);
+}
+
+.plant-ai-history span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plant-ai-history i {
+  display: grid;
+  place-items: center;
+  color: var(--ink-500);
+  font-style: normal;
+}
+
+.plant-ai-chat-card {
+  min-height: 720px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.plant-ai-chat-head {
+  min-height: 68px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(20, 39, 29, .08);
+  background: rgba(248, 250, 247, .72);
+}
+
+.plant-ai-chat-head span {
+  display: block;
+  color: var(--forest-800);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.plant-ai-chat-head strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-900);
+  font-size: 14px;
+}
+
+.plant-ai-chat-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 28px;
+}
+
+.plant-ai-start {
+  min-height: 460px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.plant-ai-start-icon {
+  width: 74px;
+  height: 74px;
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--forest-800);
+  background:
+    linear-gradient(135deg, rgba(31, 122, 77, .12), rgba(37, 99, 168, .10)),
+    #fff;
+  border: 1px solid rgba(20, 39, 29, .08);
+}
+
+.plant-ai-start h2 {
+  margin: 18px 0 8px;
+  color: var(--ink-900);
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+.plant-ai-start p {
+  max-width: 500px;
+  margin: 0;
+  color: var(--ink-500);
+  line-height: 1.55;
+}
+
+.plant-ai-starters {
+  width: min(100%, 620px);
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.plant-ai-starters button {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 10px;
+  background: var(--ink-50);
+  color: var(--ink-900);
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plant-ai-starters button:hover {
+  background: #fff;
+  border-color: rgba(31, 122, 77, .22);
+}
+
+.plant-ai-context-chips {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.plant-ai-context-chips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-500);
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+.plant-ai-message {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.plant-ai-message.user {
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+.plant-ai-message.user .plant-ai-avatar {
+  grid-column: 2;
+  grid-row: 1;
+  background: var(--forest-800);
+}
+
+.plant-ai-message.user .plant-ai-bubble {
+  grid-column: 1;
+  justify-self: end;
+  background: rgba(31, 122, 77, .08);
+}
+
+.plant-ai-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #a15f00;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.plant-ai-bubble {
+  max-width: 820px;
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink-900);
+}
+
+.plant-ai-message-image {
+  width: min(260px, 100%);
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(20, 39, 29, .08);
+}
+
+.plant-ai-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.plant-ai-inline-actions button,
+.plant-ai-result-card button,
+.plant-ai-action,
+.plant-ai-action-grid button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(20, 39, 29, .1);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-900);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.plant-ai-inline-actions button:hover,
+.plant-ai-result-card button:hover,
+.plant-ai-action:hover,
+.plant-ai-action-grid button:hover {
+  border-color: rgba(31, 122, 77, .28);
+  color: var(--forest-800);
+}
+
+.plant-ai-pending {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(20, 39, 29, .08);
+  background: rgba(248, 250, 247, .9);
+}
+
+.plant-ai-pending img {
+  width: 58px;
+  height: 58px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.plant-ai-pending strong,
+.plant-ai-pending span {
+  display: block;
+}
+
+.plant-ai-pending strong {
+  color: var(--ink-900);
+  font-size: 13px;
+}
+
+.plant-ai-pending span {
+  margin-top: 3px;
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.plant-ai-pending button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-500);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.plant-ai-composer {
+  display: grid;
+  grid-template-columns: 42px 42px minmax(0, 1fr) 46px;
+  gap: 8px;
+  align-items: center;
+  padding: 14px;
+  border-top: 1px solid rgba(20, 39, 29, .08);
+  background: #fff;
+}
+
+.plant-ai-composer button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(20, 39, 29, .1);
+  border-radius: 11px;
+  background: var(--ink-50);
+  color: var(--ink-900);
+  cursor: pointer;
+}
+
+.plant-ai-composer button.send {
+  width: 46px;
+  background: var(--forest-800);
+  color: #fff;
+  border-color: var(--forest-800);
+}
+
+.plant-ai-composer input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(20, 39, 29, .1);
+  border-radius: 11px;
+  background: var(--ink-50);
+  color: var(--ink-900);
+  font-size: 15px;
+  padding: 0 13px;
+  outline: none;
+}
+
+.plant-ai-composer input:focus {
+  background: #fff;
+  border-color: rgba(31, 122, 77, .34);
+}
+
+.plant-ai-rail {
+  display: grid;
+  gap: 12px;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+
+.plant-ai-rail > section {
+  padding: 14px;
+}
+
+.plant-ai-rail h3 {
+  margin: 0 0 10px;
+  color: var(--ink-900);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.plant-ai-context-card,
+.plant-ai-scan-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--ink-50);
+  color: var(--forest-800);
+}
+
+.plant-ai-context-card strong,
+.plant-ai-scan-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-900);
+  font-size: 13px;
+}
+
+.plant-ai-context-card span,
+.plant-ai-scan-card span {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.plant-ai-scan-card img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 9px;
+}
+
+.plant-ai-mini-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.plant-ai-fact-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.plant-ai-fact-grid article {
+  display: grid;
+  gap: 4px;
+  min-height: 82px;
+  align-content: center;
+  padding: 10px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 10px;
+  background: var(--ink-50);
+}
+
+.plant-ai-fact-grid article.tone-ok {
+  border-color: rgba(31, 122, 77, .18);
+  background: rgba(31, 122, 77, .06);
+}
+
+.plant-ai-fact-grid article.tone-warn {
+  border-color: rgba(161, 95, 0, .2);
+  background: rgba(161, 95, 0, .07);
+}
+
+.plant-ai-fact-grid article.tone-risk {
+  border-color: rgba(180, 35, 24, .2);
+  background: rgba(180, 35, 24, .07);
+}
+
+.plant-ai-fact-grid span {
+  color: var(--ink-500);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.plant-ai-fact-grid strong {
+  color: var(--ink-900);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.plant-ai-fact-grid small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-500);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.plant-ai-mini-list span,
+.plant-ai-task-list div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.plant-ai-action {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.plant-ai-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.plant-ai-action-grid button {
+  border-radius: 10px;
+  padding: 9px 8px;
+}
+
+.plant-ai-inline-actions button:disabled,
+.plant-ai-result-card button:disabled,
+.plant-ai-action:disabled,
+.plant-ai-action-grid button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.plant-ai-task-list {
+  display: grid;
+  gap: 8px;
+}
+
+.plant-ai-task-list p,
+.plant-ai-photo-grid p,
+.plant-ai-plan-preview p {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 13px;
+}
+
+.plant-ai-plan-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.plant-ai-plan-preview article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 10px;
+  background: var(--ink-50);
+}
+
+.plant-ai-plan-preview span {
+  color: var(--forest-800);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.plant-ai-plan-preview strong {
+  color: var(--ink-900);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.plant-ai-plan-preview small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-500);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.plant-ai-task-list div {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(20, 39, 29, .07);
+}
+
+.plant-ai-task-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-900);
+}
+
+.plant-ai-task-list small {
+  color: var(--ink-500);
+}
+
+.plant-ai-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.plant-ai-photo-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 9px;
+  border: 1px solid rgba(20, 39, 29, .08);
+}
+
+.plant-ai-result-card {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(239, 248, 236, .7), rgba(236, 244, 255, .54)),
+    #fff;
+}
+
+.plant-ai-result-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  color: var(--forest-800);
+}
+
+.plant-ai-result-head span {
+  display: block;
+  color: var(--ink-500);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.plant-ai-result-head strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-900);
+  font-size: 15px;
+}
+
+.plant-ai-result-head small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-500);
+}
+
+.plant-ai-result-card p {
+  margin: 0;
+  color: var(--ink-900);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.plant-ai-result-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plant-ai-result-tags span {
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .74);
+  color: var(--ink-500);
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.plant-ai-growth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.plant-ai-growth-grid span {
+  display: grid;
+  gap: 2px;
+  min-height: 50px;
+  align-content: center;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .68);
+  padding: 8px;
+  color: var(--ink-500);
+  font-size: 11px;
+}
+
+.plant-ai-growth-grid strong {
+  color: var(--ink-900);
+  font-size: 13px;
+}
+
+.plant-ai-auth,
+.plant-ai-empty,
+.plant-ai-loading {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 28px;
+}
+
+.plant-ai-auth h1,
+.plant-ai-empty h2 {
+  margin: 0;
+  color: var(--ink-900);
+  letter-spacing: 0;
+}
+
+.plant-ai-auth p,
+.plant-ai-empty p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--ink-500);
+  line-height: 1.55;
+}
+
+.plant-ai-loading {
+  display: flex;
+  align-items: center;
+  color: var(--ink-500);
+}
+
+.spin {
+  animation: plant-ai-spin .8s linear infinite;
+}
+
+@keyframes plant-ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+.prose-chat p { margin: 0 0 10px; }
+.prose-chat ul,
+.prose-chat ol { margin: 8px 0 12px; padding-left: 22px; }
+.prose-chat li { margin: 4px 0; }
+.prose-chat strong { color: var(--forest-800); }
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 { margin: 14px 0 8px; letter-spacing: 0; }
+.prose-chat code { background: var(--ink-50); padding: 2px 6px; border-radius: 4px; font-size: .9em; }
+
+@media (max-width: 1180px) {
+  .plant-ai-shell {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .plant-ai-rail {
+    grid-column: 1 / -1;
+    position: static;
+    max-height: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .plant-ai-page {
+    padding-top: 14px;
+  }
+
+  .plant-ai-hero {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .plant-ai-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .plant-ai-sidebar,
+  .plant-ai-rail {
+    position: static;
+    max-height: none;
+  }
+
+  .plant-ai-chat-card {
+    min-height: 680px;
+    max-height: none;
+  }
+
+  .plant-ai-rail {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .plant-ai-hero h1 {
+    font-size: 30px;
+  }
+
+  .plant-ai-metrics,
+  .plant-ai-action-grid,
+  .plant-ai-growth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plant-ai-chat-scroll {
+    padding: 18px 14px;
+  }
+
+  .plant-ai-chat-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .plant-ai-message,
+  .plant-ai-message.user {
+    grid-template-columns: 1fr;
+  }
+
+  .plant-ai-avatar,
+  .plant-ai-message.user .plant-ai-avatar {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .plant-ai-message.user .plant-ai-bubble {
+    grid-column: 1;
+    justify-self: stretch;
+  }
+
+  .plant-ai-composer {
+    grid-template-columns: 42px 42px 1fr 46px;
+    padding: 10px;
+  }
+
+  .plant-ai-composer input {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .plant-ai-composer button {
+    grid-row: 2;
+  }
+
+  .plant-ai-pending {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .plant-ai-pending button {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}

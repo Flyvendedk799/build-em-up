@@ -1,5 +1,6 @@
 // Structured plant diagnosis card rendered inline in chat.
 import { motion } from "framer-motion";
+import { ShoppingBag } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export type Diagnosis = {
@@ -73,8 +74,8 @@ export default function DiagnosisCard({ d }: { d: Diagnosis }) {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {d.product_suggestions.map((p) => (
               <Link key={p.name} to={`/webshop?q=${encodeURIComponent(p.name)}`}
-                className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>
-                🛒 {p.name}
+                className="btn btn-ghost btn-sm" style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <ShoppingBag size={13} /> {p.name}
               </Link>
             ))}
           </div>

@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, Clock, Sparkles } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CareAction } from "@/lib/companionTypes";
 
@@ -9,6 +9,8 @@ type Props = {
   onComplete: (id: string) => void;
   onSnooze: (id: string) => void;
   onCreateSuggestion: (action: Omit<CareAction, "id">) => void;
+  onGenerateSuggestions?: () => void;
+  generatingSuggestions?: boolean;
 };
 
 function dueLabel(iso?: string | null) {
@@ -28,11 +30,13 @@ function priorityText(p: CareAction["priority"]) {
   return "Normal";
 }
 
-export default function CarePlan({ actions, suggestions, zoneNames, onComplete, onSnooze, onCreateSuggestion }: Props) {
+export default function CarePlan({ actions, suggestions, zoneNames, onComplete, onSnooze, onCreateSuggestion, onGenerateSuggestions, generatingSuggestions }: Props) {
   const open = actions.filter((a) => a.status === "open").sort((a, b) => {
     const order = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
     return order[a.priority] - order[b.priority];
   });
+  const seasonal = open.filter((action) => action.source === "season").length;
+  const issues = open.filter((action) => action.kind === "diagnose" || action.kind === "issue_resolution" || action.kind === "growth_anomaly").length;
 
   return (
     <div className="companion-plan">
@@ -42,8 +46,16 @@ export default function CarePlan({ actions, suggestions, zoneNames, onComplete, 
             <div className="companion-eyebrow">Plejeplan</div>
             <h2>Alt der skal gøres, sorteret efter risiko og timing.</h2>
           </div>
-          <div className="companion-plan-count">
-            <CalendarDays size={15} /> {open.length} åbne
+          <div className="companion-plan-tools">
+            {onGenerateSuggestions && (
+              <Button variant="outline" size="sm" onClick={onGenerateSuggestions} disabled={generatingSuggestions}>
+                {generatingSuggestions ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Sparkles size={14} className="mr-1.5" />}
+                Hent AI-forslag
+              </Button>
+            )}
+            <div className="companion-plan-count">
+              <CalendarDays size={15} /> {open.length} åbne
+            </div>
           </div>
         </div>
 
@@ -53,6 +65,12 @@ export default function CarePlan({ actions, suggestions, zoneNames, onComplete, 
             Ingen åbne opgaver. Scan et bed eller tilføj planter for at få en skarpere plan.
           </div>
         ) : (
+          <>
+          <div className="companion-plan-groups">
+            <span>{seasonal} sæson</span>
+            <span>{issues} problemløkker</span>
+            <span>{open.length - seasonal - issues} øvrige</span>
+          </div>
           <div className="companion-task-grid">
             {open.map((action) => (
               <article key={action.id} className={`companion-task companion-task--${action.priority}`}>
@@ -76,6 +94,7 @@ export default function CarePlan({ actions, suggestions, zoneNames, onComplete, 
               </article>
             ))}
           </div>
+          </>
         )}
       </section>
 

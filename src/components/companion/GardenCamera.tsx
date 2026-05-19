@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { fileToDataUrl, uploadPlantPhoto } from "@/lib/plantPhotos";
-import { actionFromScan } from "@/lib/companionActions";
-import { asNumberConfidence, mapAnchor, normalizeScanResult, type ObservationKind } from "@/lib/companionTypes";
+import { actionFromScan, actionsFromBedScan, actionsFromGrowth } from "@/lib/companionActions";
+import { asNumberConfidence, mapAnchor, normalizeScanResult, type CareAction, type ObservationKind } from "@/lib/companionTypes";
 
 type ScanMode = "identify" | "diagnosis" | "growth" | "bed_scan" | "photo" | "harvest";
 
@@ -28,6 +28,8 @@ type Props = {
   plants: Plant[];
   observations: Observation[];
   defaultZoneId?: string | null;
+  defaultPlantId?: string | null;
+  defaultMode?: ScanMode;
   onSaved: () => void;
 };
 
@@ -55,7 +57,26 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-export default function GardenCamera({ userId, garden, zones, plants, observations, defaultZoneId, onSaved }: Props) {
+function taskRowsFromActions(userId: string, actions: Omit<CareAction, "id">[]) {
+  return actions.map((action) => ({
+    user_id: userId,
+    garden_id: action.garden_id,
+    zone_id: action.zone_id ?? null,
+    plant_id: action.plant_id ?? null,
+    observation_id: action.observation_id ?? null,
+    kind: action.kind,
+    title: action.title,
+    notes: action.reason ?? null,
+    due_at: action.due_at ?? null,
+    priority: action.priority,
+    source: action.source,
+    reason: action.reason ?? null,
+    confidence: action.confidence ?? null,
+    payload: action.payload ?? {},
+  }));
+}
+
+export default function GardenCamera({ userId, garden, zones, plants, observations, defaultZoneId, defaultPlantId, defaultMode, onSaved }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const camRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<ScanMode>("identify");
@@ -73,9 +94,23 @@ export default function GardenCamera({ userId, garden, zones, plants, observatio
     setZoneId(defaultZoneId || zones[0]?.id || "none");
   }, [defaultZoneId, zones]);
 
+  useEffect(() => {
+    if (defaultPlantId) setPlantId(defaultPlantId);
+  }, [defaultPlantId]);
+
+  useEffect(() => {
+    if (defaultMode) setMode(defaultMode);
+  }, [defaultMode]);
+
   const selectedZone = zoneId === "none" ? null : zones.find((z) => z.id === zoneId) ?? null;
   const selectedPlant = plantId === "none" ? null : plants.find((p) => p.id === plantId) ?? null;
   const modeMeta = MODES.find((m) => m.key === mode)!;
+  const scanRoute = [
+    { label: "Foto", done: Boolean(preview) },
+    { label: mode === "photo" || mode === "harvest" ? "Log" : "AI", done: Boolean(result) || mode === "photo" || mode === "harvest" },
+    { label: "Kort", done: Boolean(selectedZone || pos) },
+    { label: "Handling", done: Boolean(result) && (mode === "diagnosis" || mode === "growth" || mode === "bed_scan") },
+  ];
 
   const previousPlantObservations = useMemo(() => {
     if (!selectedPlant) return [];
@@ -285,6 +320,18 @@ export default function GardenCamera({ userId, garden, zones, plants, observatio
             last_observed_at: new Date().toISOString(),
           }).eq("id", selectedPlant.id);
         }
+
+        const growthActions = actionsFromGrowth(garden.id, rawResult, observation.id, selectedZone?.id ?? null, selectedPlant?.id ?? null);
+        if (growthActions.length > 0) {
+          await supabase.from("task_log").insert(taskRowsFromActions(userId, growthActions));
+        }
+      }
+
+      if (mode === "bed_scan") {
+        const bedActions = actionsFromBedScan(garden.id, rawResult, observation.id, selectedZone?.id ?? null, selectedPlant?.id ?? null);
+        if (bedActions.length > 0) {
+          await supabase.from("task_log").insert(taskRowsFromActions(userId, bedActions));
+        }
       }
 
       if (mode === "harvest") {
@@ -334,21 +381,37 @@ export default function GardenCamera({ userId, garden, zones, plants, observatio
           ))}
         </div>
 
+        <div className="companion-scan-route" aria-label="Scan workflow">
+          {scanRoute.map((step, index) => (
+            <div key={step.label} className={step.done ? "done" : ""}>
+              <span>{index + 1}</span>
+              <strong>{step.label}</strong>
+            </div>
+          ))}
+        </div>
+
         <div className="companion-camera-grid">
           <div>
             {!preview ? (
               <div className="companion-upload">
                 <Camera size={34} />
                 <h3>Start med et billede</h3>
-                <p>Kameraet er den hurtigste måde at tilføje planter, sygdomme, vækst og høst til kortet.</p>
+                <p>{modeMeta.hint}</p>
                 <div className="companion-upload-actions">
                   <Button onClick={() => camRef.current?.click()}><Camera size={15} className="mr-1.5" /> Tag foto</Button>
                   <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload size={15} className="mr-1.5" /> Upload</Button>
                 </div>
+                {mode === "growth" && (
+                  <div className="companion-ghost-guide">
+                    <span />
+                    Samme vinkel giver bedre væksttrend.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="companion-preview">
                 <img src={preview} alt="Scan" />
+                {mode === "growth" && <div className="companion-preview-ghost" aria-hidden />}
                 <button onClick={() => { setFile(null); setPreview(null); setResult(null); }} aria-label="Fjern billede">
                   <X size={15} />
                 </button>

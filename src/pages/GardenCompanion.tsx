@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BarChart3, CalendarDays, Droplets, Leaf, Map, NotebookPen, Radio, Sprout, Users } from "lucide-react";
+import { BarChart3, Bot, CalendarDays, Camera, CheckCircle2, CloudSun, Droplets, Footprints, Gauge, Leaf, MapPin, NotebookPen, PlugZap, Radio, ShieldCheck, Sprout, Users, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,21 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { useActiveGarden } from "@/lib/activeGarden";
-import type { CompanionView, CareAction, MapAnchor } from "@/lib/companionTypes";
+import type { CompanionView, CareAction, CompanionPreferences as CompanionPreferencesState, MapAnchor } from "@/lib/companionTypes";
+import { readCompanionPreferences } from "@/lib/companionTypes";
 import { generateDeviceActions, generateWeatherActions } from "@/lib/companionActions";
+import { computeHealthScore, computePlantScores, computeZoneScores } from "@/lib/companionHealth";
+import { generateSeasonActions, generateZoneInsights } from "@/lib/companionInsights";
 import { fetchForecast, type Forecast, type Schedule, weekSummary } from "@/lib/wateringAI";
 import CompanionToday from "@/components/companion/CompanionToday";
 import GardenMap from "@/components/companion/GardenMap";
 import GardenCamera from "@/components/companion/GardenCamera";
 import CarePlan from "@/components/companion/CarePlan";
+import CompanionPreferences from "@/components/companion/CompanionPreferences";
+import GardenRound from "@/components/companion/GardenRound";
+import PlantTimeline from "@/components/companion/PlantTimeline";
+import GardenCoach from "@/components/companion/GardenCoach";
+import SeasonPlan from "@/components/companion/SeasonPlan";
 import MorningBriefing from "@/components/watering/MorningBriefing";
 import CalendarTimeline from "@/components/watering/CalendarTimeline";
 import JournalTab from "@/components/watering/JournalTab";
@@ -25,7 +33,7 @@ import CalendarTab from "@/components/watering/CalendarTab";
 import type { ZonePlant } from "@/components/watering/PlantChips";
 import "@/styles/companion.css";
 
-type View = CompanionView | "yearwheel" | "community";
+type View = CompanionView | "yearwheel" | "community" | "round" | "coach";
 type Garden = Tables<"gardens">;
 type Zone = Tables<"garden_zones">;
 type Plant = Tables<"user_plants"> & {
@@ -33,6 +41,12 @@ type Plant = Tables<"user_plants"> & {
 };
 type Observation = Tables<"garden_observations">;
 type Device = Tables<"devices">;
+type DeviceAction = Tables<"device_actions">;
+type DeviceReading = Tables<"device_readings">;
+type IntegrationConnection = Tables<"integration_connections">;
+type HealthLog = Tables<"plant_health_log">;
+type GrowthSnapshotRow = Tables<"plant_growth_snapshots">;
+type JournalRow = Tables<"garden_journal">;
 type Task = Tables<"task_log">;
 type EventRow = Tables<"watering_events">;
 type CatalogCalendar = {
@@ -45,8 +59,19 @@ type CatalogCalendar = {
   winterize_months?: number[] | null;
 };
 
+type CompanionHandoff = {
+  source?: string;
+  gardenId?: string | null;
+  zoneId?: string | null;
+  plantId?: string | null;
+  view?: View;
+  scanMode?: "identify" | "diagnosis" | "growth" | "bed_scan" | "photo" | "harvest";
+  createdAt?: string;
+};
+
 const PRIMARY: { key: View; label: string }[] = [
   { key: "today", label: "I dag" },
+  { key: "round", label: "Havegang" },
   { key: "map", label: "Kort" },
   { key: "scan", label: "Scan" },
   { key: "plan", label: "Plan" },
@@ -57,10 +82,39 @@ const SECONDARY: { key: View; label: string; icon: React.ElementType }[] = [
   { key: "water", label: "Vanding", icon: Droplets },
   { key: "journal", label: "Dagbog", icon: NotebookPen },
   { key: "devices", label: "Smart have", icon: Radio },
+  { key: "coach", label: "Coach", icon: Bot },
   { key: "yearwheel", label: "Årshjul", icon: CalendarDays },
   { key: "community", label: "Nabolag", icon: Users },
   { key: "insights", label: "Indsigt", icon: BarChart3 },
 ];
+
+const VIEW_KEYS = new Set<View>([
+  ...PRIMARY.map((item) => item.key),
+  ...SECONDARY.map((item) => item.key),
+]);
+
+function readCompanionHandoff(): CompanionHandoff | null {
+  try {
+    const raw = localStorage.getItem("companion.handoff");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const view = typeof parsed.view === "string" && VIEW_KEYS.has(parsed.view as View) ? parsed.view as View : undefined;
+    const scanMode = parsed.scanMode === "identify" || parsed.scanMode === "diagnosis" || parsed.scanMode === "growth" || parsed.scanMode === "bed_scan" || parsed.scanMode === "photo" || parsed.scanMode === "harvest"
+      ? parsed.scanMode
+      : undefined;
+    return {
+      source: typeof parsed.source === "string" ? parsed.source : undefined,
+      gardenId: typeof parsed.gardenId === "string" ? parsed.gardenId : null,
+      zoneId: typeof parsed.zoneId === "string" ? parsed.zoneId : null,
+      plantId: typeof parsed.plantId === "string" ? parsed.plantId : null,
+      view,
+      scanMode,
+      createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function priorityOf(value: string | null): CareAction["priority"] {
   if (value === "urgent" || value === "high" || value === "low") return value;
@@ -120,6 +174,28 @@ function readAnchor(anchor: unknown): MapAnchor {
   return (anchor && typeof anchor === "object" ? anchor : {}) as MapAnchor;
 }
 
+function normalizeSuggestion(gardenId: string, value: unknown): Omit<CareAction, "id"> | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const title = typeof row.title === "string" ? row.title : null;
+  if (!title) return null;
+  return {
+    kind: typeof row.kind === "string" ? row.kind : "companion_action",
+    title,
+    reason: typeof row.reason === "string" ? row.reason : null,
+    priority: row.priority === "urgent" || row.priority === "high" || row.priority === "normal" || row.priority === "low" ? row.priority : "normal",
+    due_at: typeof row.due_at === "string" ? row.due_at : null,
+    status: "open",
+    source: sourceOf(typeof row.source === "string" ? row.source : null),
+    confidence: typeof row.confidence === "number" ? row.confidence : null,
+    garden_id: typeof row.garden_id === "string" ? row.garden_id : gardenId,
+    zone_id: typeof row.zone_id === "string" ? row.zone_id : null,
+    plant_id: typeof row.plant_id === "string" ? row.plant_id : null,
+    observation_id: typeof row.observation_id === "string" ? row.observation_id : null,
+    payload: (row.payload && typeof row.payload === "object" ? row.payload : {}) as Json,
+  };
+}
+
 export default function GardenCompanion() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -133,10 +209,21 @@ export default function GardenCompanion() {
   const [observations, setObservations] = useState<Observation[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [connections, setConnections] = useState<IntegrationConnection[]>([]);
+  const [deviceReadings, setDeviceReadings] = useState<DeviceReading[]>([]);
+  const [deviceActions, setDeviceActions] = useState<DeviceAction[]>([]);
+  const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
+  const [growthSnapshots, setGrowthSnapshots] = useState<GrowthSnapshotRow[]>([]);
+  const [journal, setJournal] = useState<JournalRow[]>([]);
+  const [remoteSuggestions, setRemoteSuggestions] = useState<Omit<CareAction, "id">[]>([]);
+  const [generatingActions, setGeneratingActions] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
+  const [scanPlantId, setScanPlantId] = useState<string | null>(null);
+  const [scanMode, setScanMode] = useState<"identify" | "diagnosis" | "growth" | "bed_scan" | "photo" | "harvest" | undefined>();
   const [catalogBySlug, setCatalogBySlug] = useState<Record<string, CatalogCalendar>>({});
 
   const setViewPersist = (next: View) => {
@@ -164,6 +251,13 @@ export default function GardenCompanion() {
       setObservations([]);
       setTasks([]);
       setDevices([]);
+      setConnections([]);
+      setDeviceReadings([]);
+      setDeviceActions([]);
+      setHealthLogs([]);
+      setGrowthSnapshots([]);
+      setJournal([]);
+      setRemoteSuggestions([]);
       setSchedules([]);
       setEvents([]);
       setLoading(false);
@@ -176,6 +270,12 @@ export default function GardenCompanion() {
       { data: observationRows },
       { data: taskRows },
       { data: deviceRows },
+      { data: connectionRows },
+      { data: readingRows },
+      { data: deviceActionRows },
+      { data: healthRows },
+      { data: growthRows },
+      { data: journalRows },
       { data: scheduleRows },
       { data: eventRows },
     ] = await Promise.all([
@@ -187,6 +287,12 @@ export default function GardenCompanion() {
       supabase.from("garden_observations").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(200),
       supabase.from("task_log").select("*").eq("garden_id", active.id).order("due_at", { ascending: true, nullsFirst: false }).limit(120),
       supabase.from("devices").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }),
+      supabase.from("integration_connections").select("*").eq("garden_id", active.id).order("updated_at", { ascending: false }),
+      supabase.from("device_readings").select("*").eq("garden_id", active.id).order("observed_at", { ascending: false }).limit(120),
+      supabase.from("device_actions").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(60),
+      supabase.from("plant_health_log").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
+      supabase.from("plant_growth_snapshots").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
+      supabase.from("garden_journal").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
       supabase.from("watering_schedules").select("*").eq("user_id", user.id),
       supabase.from("watering_events").select("*").eq("user_id", user.id).order("scheduled_for", { ascending: false }).limit(250),
     ]);
@@ -196,6 +302,13 @@ export default function GardenCompanion() {
     setObservations((observationRows ?? []) as Observation[]);
     setTasks((taskRows ?? []) as Task[]);
     setDevices((deviceRows ?? []) as Device[]);
+    setConnections((connectionRows ?? []) as IntegrationConnection[]);
+    setDeviceReadings((readingRows ?? []) as DeviceReading[]);
+    setDeviceActions((deviceActionRows ?? []) as DeviceAction[]);
+    setHealthLogs((healthRows ?? []) as HealthLog[]);
+    setGrowthSnapshots((growthRows ?? []) as GrowthSnapshotRow[]);
+    setJournal((journalRows ?? []) as JournalRow[]);
+    setRemoteSuggestions([]);
     setSchedules((scheduleRows ?? []) as Schedule[]);
     setEvents((eventRows ?? []) as EventRow[]);
     setLoading(false);
@@ -208,6 +321,30 @@ export default function GardenCompanion() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!garden || loading) return;
+    const handoff = readCompanionHandoff();
+    if (!handoff) return;
+    if (handoff.gardenId && handoff.gardenId !== garden.id) return;
+    if (handoff.createdAt && Date.now() - new Date(handoff.createdAt).getTime() > 10 * 60_000) {
+      localStorage.removeItem("companion.handoff");
+      return;
+    }
+
+    const nextZone = handoff.zoneId && zones.some((zone) => zone.id === handoff.zoneId) ? handoff.zoneId : null;
+    const nextPlant = handoff.plantId && plants.some((plant) => plant.id === handoff.plantId) ? handoff.plantId : null;
+    const plantZone = nextPlant ? plants.find((plant) => plant.id === nextPlant)?.zone_id ?? null : null;
+
+    setSelectedZoneId(nextZone ?? plantZone);
+    setSelectedPlantId(nextPlant);
+    if (handoff.scanMode) {
+      setScanMode(handoff.scanMode);
+      setScanPlantId(nextPlant);
+    }
+    if (handoff.view) setViewPersist(handoff.view);
+    localStorage.removeItem("companion.handoff");
+  }, [garden, loading, plants, zones]);
 
   useEffect(() => {
     if (!garden?.latitude || !garden?.longitude) {
@@ -234,6 +371,7 @@ export default function GardenCompanion() {
   }, [plants]);
 
   const zoneNames = useMemo(() => Object.fromEntries(zones.map((z) => [z.id, z.name])), [zones]);
+  const preferences = useMemo(() => readCompanionPreferences(garden?.preferences), [garden?.preferences]);
   const plantsByZone = useMemo(() => {
     const map: Record<string, ZonePlant[]> = {};
     plants.forEach((plant) => {
@@ -256,14 +394,53 @@ export default function GardenCompanion() {
 
   const summary = useMemo(() => weekSummary(schedules, zones, forecasts), [forecasts, schedules, zones]);
   const actions = useMemo(() => tasks.map(taskToAction), [tasks]);
+  const healthInput = useMemo(() => ({
+    zones,
+    plants,
+    observations,
+    tasks,
+    devices,
+    readings: deviceReadings,
+    healthLogs,
+    growthSnapshots,
+    forecasts,
+  }), [deviceReadings, devices, forecasts, growthSnapshots, healthLogs, observations, plants, tasks, zones]);
+  const gardenHealth = useMemo(() => computeHealthScore(healthInput), [healthInput]);
+  const zoneScores = useMemo(() => computeZoneScores(healthInput), [healthInput]);
+  const plantScores = useMemo(() => computePlantScores(healthInput), [healthInput]);
+  const zoneInsights = useMemo(() => Object.fromEntries(zones.map((zone) => [
+    zone.id,
+    generateZoneInsights({
+      zone,
+      healthScore: zoneScores[zone.id],
+      observations,
+      tasks,
+      devices,
+      readings: deviceReadings,
+      forecasts,
+    }),
+  ])), [deviceReadings, devices, forecasts, observations, tasks, zoneScores, zones]);
+  const seasonActions = useMemo(() => {
+    if (!garden) return [];
+    return generateSeasonActions({
+      gardenId: garden.id,
+      zones,
+      plants,
+      catalogBySlug,
+      existingTasks: tasks,
+    });
+  }, [catalogBySlug, garden, plants, tasks, zones]);
+  const selectedPlant = useMemo(() => selectedPlantId ? plants.find((plant) => plant.id === selectedPlantId) ?? null : null, [plants, selectedPlantId]);
   const suggestions = useMemo(() => {
     if (!garden) return [];
     const existingTitles = new Set(actions.filter((a) => a.status !== "done").map((a) => a.title));
     return [
+      ...remoteSuggestions,
+      ...seasonActions,
       ...generateWeatherActions(garden.id, zones, forecasts),
       ...generateDeviceActions(garden.id, devices),
     ].filter((a) => !existingTitles.has(a.title));
-  }, [actions, devices, forecasts, garden, zones]);
+  }, [actions, devices, forecasts, garden, remoteSuggestions, seasonActions, zones]);
 
   async function completeAction(id: string) {
     const { error } = await supabase.from("task_log").update({ done: true, done_at: new Date().toISOString() }).eq("id", id);
@@ -295,6 +472,122 @@ export default function GardenCompanion() {
     }
     setTasks((prev) => [...prev, data as Task]);
     toast.success("Tilføjet til plejeplanen");
+  }
+
+  async function createManySuggestions(nextActions: Omit<CareAction, "id">[]) {
+    if (!user || nextActions.length === 0) return;
+    const rows = nextActions.map((action) => actionToTaskInsert(user.id, action));
+    const { data, error } = await supabase.from("task_log").insert(rows).select();
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setTasks((prev) => [...prev, ...((data ?? []) as Task[])]);
+    toast.success(`${rows.length} opgaver tilføjet`);
+  }
+
+  function openScanForZone(zoneId: string, mode: typeof scanMode = "bed_scan") {
+    setSelectedZoneId(zoneId);
+    setScanPlantId(null);
+    setScanMode(mode);
+    setViewPersist("scan");
+  }
+
+  function openScanForPlant(plantId: string, mode: typeof scanMode = "growth") {
+    const plant = plants.find((item) => item.id === plantId);
+    setSelectedPlantId(plantId);
+    setSelectedZoneId(plant?.zone_id ?? null);
+    setScanPlantId(plantId);
+    setScanMode(mode);
+    setViewPersist("scan");
+  }
+
+  async function followUpIssue(state: "open" | "watching" | "improving" | "resolved") {
+    if (!user || !garden || !selectedPlantId) return;
+    const plant = plants.find((item) => item.id === selectedPlantId);
+    if (!plant) return;
+    if (state === "resolved") {
+      const { error } = await supabase.from("garden_observations").insert({
+        user_id: user.id,
+        garden_id: garden.id,
+        zone_id: plant.zone_id,
+        plant_id: plant.id,
+        kind: "diagnosis",
+        caption: "Problem markeret som løst",
+        anchor: { garden_id: garden.id, zone_id: plant.zone_id, plant_id: plant.id, accuracy: "manual" } as Json,
+        ai_result: { severity: "low", resolution_state: "resolved", summary: "Problem markeret som løst" } as Json,
+        confidence: 0.8,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      await supabase.from("task_log")
+        .update({ done: true, done_at: new Date().toISOString(), payload: { resolution_state: "resolved" } as Json })
+        .eq("plant_id", plant.id)
+        .in("kind", ["diagnose", "issue_resolution"]);
+      toast.success("Problemet er lukket");
+      await load();
+      return;
+    }
+
+    const title = state === "improving" ? "Følg bedring op" : "Følg sygdom eller skadedyr op";
+    await createSuggestion({
+      kind: "issue_resolution",
+      title,
+      reason: state === "improving" ? "Der er set bedring. Tag et kontrolfoto om få dage." : "Hold øje og tag et nyt foto for at lukke løkken.",
+      priority: state === "open" ? "high" : "normal",
+      due_at: new Date(Date.now() + 3 * 86400_000).toISOString(),
+      status: "open",
+      source: "scan",
+      confidence: 0.72,
+      garden_id: garden.id,
+      zone_id: plant.zone_id,
+      plant_id: plant.id,
+      payload: { resolution_state: state } as Json,
+    });
+  }
+
+  async function savePreferences(next: CompanionPreferencesState) {
+    if (!garden) return;
+    const preferencesJson = next as unknown as Json;
+    const { error } = await supabase.from("gardens").update({
+      preferences: preferencesJson,
+      updated_at: new Date().toISOString(),
+    }).eq("id", garden.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setGarden((prev) => prev ? { ...prev, preferences: preferencesJson } as Garden : prev);
+    setGardens((prev) => prev.map((row) => row.id === garden.id ? { ...row, preferences: preferencesJson } as Garden : row));
+    toast.success("Driftsprofil gemt");
+  }
+
+  async function generateCompanionActions(persist = false) {
+    if (!garden) return;
+    setGeneratingActions(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-companion-actions", {
+        body: { garden_id: garden.id, persist },
+      });
+      if (error) throw error;
+      const rawActions = Array.isArray(data?.actions) ? data.actions : [];
+      const next = rawActions
+        .map((action) => normalizeSuggestion(garden.id, action))
+        .filter(Boolean) as Omit<CareAction, "id">[];
+      if (persist) {
+        await load();
+        toast.success(next.length ? "Kompagnonen lagde nye opgaver i planen" : "Ingen nye opgaver fundet");
+      } else {
+        setRemoteSuggestions(next);
+        toast.success(next.length ? "Nye forslag er hentet" : "Ingen nye forslag lige nu");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Kunne ikke hente AI-forslag");
+    } finally {
+      setGeneratingActions(false);
+    }
   }
 
   async function movePlant(id: string, x: number, y: number) {
@@ -363,6 +656,16 @@ export default function GardenCompanion() {
           )}
         </header>
 
+        <ExperienceRail
+          view={view}
+          observations={observations.length}
+          zones={zones.length}
+          plants={plants.length}
+          actions={actions.filter((a) => a.status === "open").length}
+          devices={devices.length}
+          onSelect={setViewPersist}
+        />
+
         <nav className="companion-primary-nav" aria-label="Havekompagnon hovedvisning">
           {PRIMARY.map((item) => (
             <button key={item.key} className={view === item.key ? "active" : ""} onClick={() => setViewPersist(item.key)}>
@@ -378,17 +681,38 @@ export default function GardenCompanion() {
               zones={zones}
               plantCount={plants.reduce((sum, p) => sum + (p.qty || 1), 0)}
               openActions={actions.filter((a) => a.status === "open")}
+              suggestions={suggestions}
               forecast={forecasts[0] ?? null}
               plannedL={summary.plannedL}
               savedL={summary.savedL}
               devices={devices}
+              observations={observations}
+              preferences={preferences}
+              healthScore={gardenHealth}
               onScan={() => setViewPersist("scan")}
               onMap={() => setViewPersist("map")}
               onPlan={() => setViewPersist("plan")}
+              onDevices={() => setViewPersist("devices")}
+              onRound={() => setViewPersist("round")}
+              onCoach={() => setViewPersist("coach")}
               onCompleteAction={completeAction}
             />
+            <CompanionPreferences preferences={preferences} onChange={savePreferences} />
             <MorningBriefing userId={user.id} />
           </>
+        )}
+
+        {view === "round" && (
+          <GardenRound
+            userId={user.id}
+            garden={garden}
+            zones={zones}
+            observations={observations}
+            actions={actions}
+            onScanZone={openScanForZone}
+            onCompleteAction={completeAction}
+            onSaved={load}
+          />
         )}
 
         {view === "map" && (
@@ -398,8 +722,11 @@ export default function GardenCompanion() {
             plants={plants}
             observations={observations}
             devices={devices}
+            zoneScores={zoneScores}
+            zoneInsights={zoneInsights}
             selectedZoneId={selectedZoneId}
             onSelectZone={setSelectedZoneId}
+            onSelectPlant={setSelectedPlantId}
             onMovePlant={movePlant}
             onMoveObservation={moveObservation}
             onMoveDevice={moveDevice}
@@ -414,19 +741,26 @@ export default function GardenCompanion() {
             plants={plants}
             observations={observations}
             defaultZoneId={selectedZoneId}
+            defaultPlantId={scanPlantId}
+            defaultMode={scanMode}
             onSaved={load}
           />
         )}
 
         {view === "plan" && (
-          <CarePlan
-            actions={actions}
-            suggestions={suggestions}
-            zoneNames={zoneNames}
-            onComplete={completeAction}
-            onSnooze={snoozeAction}
-            onCreateSuggestion={createSuggestion}
-          />
+          <>
+            <SeasonPlan actions={seasonActions} onAdd={createSuggestion} onAddAll={() => createManySuggestions(seasonActions)} />
+            <CarePlan
+              actions={actions}
+              suggestions={suggestions}
+              zoneNames={zoneNames}
+              onComplete={completeAction}
+              onSnooze={snoozeAction}
+              onCreateSuggestion={createSuggestion}
+              onGenerateSuggestions={() => generateCompanionActions(false)}
+              generatingSuggestions={generatingActions}
+            />
+          </>
         )}
 
         <section className="companion-secondary">
@@ -444,7 +778,18 @@ export default function GardenCompanion() {
             ))}
           </div>
 
-          {view === "plants" && <PlantInventory plants={plants} zones={zones} onScan={() => setViewPersist("scan")} />}
+          {view === "plants" && (
+            <>
+              <PlantInventory
+                plants={plants}
+                zones={zones}
+                plantScores={plantScores}
+                selectedPlantId={selectedPlantId}
+                onSelectPlant={setSelectedPlantId}
+                onScan={() => setViewPersist("scan")}
+              />
+            </>
+          )}
           {view === "water" && (
             <CalendarTimeline
               schedules={schedules}
@@ -455,18 +800,334 @@ export default function GardenCompanion() {
             />
           )}
           {view === "journal" && <JournalTab gardenId={garden.id} zones={zones} plantsByZone={plantsByZone} />}
-          {view === "devices" && <IoTTab gardenId={garden.id} zones={zones} />}
+          {view === "devices" && (
+            <>
+              <SmartGardenPanel
+                userId={user.id}
+                gardenId={garden.id}
+                zones={zones}
+                devices={devices}
+                connections={connections}
+                readings={deviceReadings}
+                deviceActions={deviceActions}
+                preferences={preferences}
+                onRefresh={load}
+              />
+              <IoTTab gardenId={garden.id} zones={zones} />
+            </>
+          )}
+          {view === "coach" && (
+            <GardenCoach
+              garden={garden}
+              zones={zones}
+              plants={plants}
+              observations={observations}
+              openActions={actions.filter((action) => action.status === "open")}
+              preferences={preferences}
+              selectedZoneId={selectedZoneId}
+              selectedPlantId={selectedPlantId}
+              zoneInsights={zoneInsights}
+              gardenHealth={gardenHealth}
+            />
+          )}
           {view === "yearwheel" && <CalendarTab gardenId={garden.id} zones={zones} plantsByZone={plantsByZone} catalogBySlug={catalogBySlug} />}
           {view === "community" && <NeighborsTab />}
           {view === "insights" && <InsightsTab events={events} zones={zones} />}
         </section>
+
+        {selectedPlant && (
+          <PlantTimeline
+            plant={selectedPlant}
+            zoneName={zones.find((zone) => zone.id === selectedPlant.zone_id)?.name}
+            observations={observations}
+            healthLogs={healthLogs}
+            growthSnapshots={growthSnapshots}
+            tasks={tasks}
+            journal={journal}
+            healthScore={plantScores[selectedPlant.id]}
+            onScan={() => openScanForPlant(selectedPlant.id)}
+            onFollowUp={followUpIssue}
+          />
+        )}
       </div>
       <SiteFooter />
     </>
   );
 }
 
-function PlantInventory({ plants, zones, onScan }: { plants: Plant[]; zones: Zone[]; onScan: () => void }) {
+const SMART_PROVIDERS = [
+  { kind: "sensor", provider: "soil-moisture", name: "Fugtsensorer", icon: Gauge, text: "Jordfugt og temperatur pr. zone." },
+  { kind: "irrigation", provider: "smart-valves", name: "Smart ventiler", icon: Droplets, text: "Klargør godkendte vandingshandlinger." },
+  { kind: "greenhouse", provider: "greenhouse-climate", name: "Drivhus klima", icon: Radio, text: "Luftfugt, varme og ventilation." },
+  { kind: "weather", provider: "local-weather", name: "Lokal vejrstation", icon: CloudSun, text: "Mere præcise regn- og vindsignaler." },
+  { kind: "mower", provider: "robot-mower", name: "Robotplæneklipper", icon: PlugZap, text: "Plænestatus og vedligeholdelsesvinduer." },
+] as const;
+
+function ExperienceRail({
+  view,
+  observations,
+  zones,
+  plants,
+  actions,
+  devices,
+  onSelect,
+}: {
+  view: View;
+  observations: number;
+  zones: number;
+  plants: number;
+  actions: number;
+  devices: number;
+  onSelect: (view: View) => void;
+}) {
+  const steps = [
+    { key: "scan", label: "Foto", value: observations, target: 4, icon: Camera },
+    { key: "map", label: "Kort", value: zones + plants, target: 8, icon: MapPin },
+    { key: "plan", label: "Plan", value: actions, target: 3, icon: CheckCircle2 },
+    { key: "devices", label: "Smart", value: devices, target: 2, icon: Radio },
+  ] as const;
+
+  return (
+    <section className="companion-experience-rail" aria-label="Havekompagnon status">
+      {steps.map((step) => {
+        const Icon = step.icon;
+        const progress = Math.min(100, Math.round((step.value / step.target) * 100));
+        return (
+          <button key={step.key} className={view === step.key ? "active" : ""} onClick={() => onSelect(step.key)}>
+            <span className="companion-rail-icon"><Icon size={16} /></span>
+            <span>
+              <strong>{step.label}</strong>
+              <small>{step.value}</small>
+            </span>
+            <i><b style={{ width: `${progress}%` }} /></i>
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
+function zoneName(zones: Pick<Zone, "id" | "name">[], zoneId?: string | null) {
+  if (!zoneId) return "Hele haven";
+  return zones.find((zone) => zone.id === zoneId)?.name ?? "Zone";
+}
+
+function deviceZone(device: Device) {
+  const metadata = device.metadata && typeof device.metadata === "object" ? device.metadata as Record<string, unknown> : {};
+  return typeof metadata.zone_id === "string" ? metadata.zone_id : null;
+}
+
+function actionStatus(status: string) {
+  if (status === "approved") return "Godkendt";
+  if (status === "executed") return "Udført";
+  if (status === "cancelled") return "Annulleret";
+  return "Afventer";
+}
+
+function SmartGardenPanel({
+  userId,
+  gardenId,
+  zones,
+  devices,
+  connections,
+  readings,
+  deviceActions,
+  preferences,
+  onRefresh,
+}: {
+  userId: string;
+  gardenId: string;
+  zones: Zone[];
+  devices: Device[];
+  connections: IntegrationConnection[];
+  readings: DeviceReading[];
+  deviceActions: DeviceAction[];
+  preferences: CompanionPreferencesState;
+  onRefresh: () => void;
+}) {
+  async function connect(provider: typeof SMART_PROVIDERS[number]) {
+    const existing = connections.find((row) => row.provider === provider.provider && row.kind === provider.kind);
+    if (existing) {
+      const { error } = await supabase.from("integration_connections").update({
+        status: "planned",
+        updated_at: new Date().toISOString(),
+      }).eq("id", existing.id);
+      if (error) toast.error(error.message);
+      else toast.success("Integration markeret til opsætning");
+      onRefresh();
+      return;
+    }
+
+    const { error } = await supabase.from("integration_connections").insert({
+      user_id: userId,
+      garden_id: gardenId,
+      kind: provider.kind,
+      provider: provider.provider,
+      display_name: provider.name,
+      status: "planned",
+      settings: { requested_from: "havekompagnon" } as Json,
+    });
+    if (error) toast.error(error.message);
+    else toast.success("Integration lagt klar");
+    onRefresh();
+  }
+
+  async function toggleDeviceAutopilot(device: Device) {
+    if (!preferences.device_autopilot_confirmed && !device.autopilot_enabled) {
+      toast.error("Bekræft enheds-autopilot i driftsprofilen først");
+      return;
+    }
+    const { error } = await supabase.from("devices").update({ autopilot_enabled: !device.autopilot_enabled }).eq("id", device.id);
+    if (error) toast.error(error.message);
+    else toast.success(device.autopilot_enabled ? "Enheds-autopilot slået fra" : "Enheds-autopilot slået til");
+    onRefresh();
+  }
+
+  async function updateAction(action: DeviceAction, status: "approved" | "cancelled") {
+    const { error } = await supabase.from("device_actions").update({
+      status,
+      approved_at: status === "approved" ? new Date().toISOString() : action.approved_at,
+    }).eq("id", action.id);
+    if (error) toast.error(error.message);
+    else toast.success(status === "approved" ? "Device-handling godkendt" : "Device-handling annulleret");
+    onRefresh();
+  }
+
+  const pendingActions = deviceActions.filter((action) => action.status === "pending" || action.status === "requested").slice(0, 5);
+  const latestReadings = readings.slice(0, 8);
+
+  return (
+    <div className="companion-integrations">
+      <section className="companion-band">
+        <div className="companion-section-head">
+          <div>
+            <div className="companion-eyebrow">Smart have</div>
+            <h2>Sensorer, ventiler og lokale signaler kobles til kortet.</h2>
+          </div>
+          <div className="companion-plan-count">
+            <Radio size={15} /> {connections.length} forbindelser
+          </div>
+        </div>
+
+        <div className="companion-provider-grid">
+          {SMART_PROVIDERS.map((provider) => {
+            const Icon = provider.icon;
+            const connection = connections.find((row) => row.provider === provider.provider && row.kind === provider.kind);
+            return (
+              <article key={provider.provider} className="companion-provider">
+                <div className="companion-provider-icon"><Icon size={17} /></div>
+                <div>
+                  <h3>{provider.name}</h3>
+                  <p>{provider.text}</p>
+                  <small>{connection ? `Status: ${connection.status}` : "Ikke forbundet"}</small>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => connect(provider)}>
+                  {connection ? "Klargør igen" : "Klargør"}
+                </Button>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="companion-smart-grid">
+        <article className="companion-band">
+          <div className="companion-section-head">
+            <div>
+              <div className="companion-eyebrow">Enheder på kortet</div>
+              <h2>Autopilot er opt-in pr. enhed.</h2>
+            </div>
+          </div>
+          {devices.length === 0 ? (
+            <div className="companion-empty"><Radio size={18} /> Ingen enheder endnu.</div>
+          ) : (
+            <div className="companion-device-list">
+              {devices.map((device) => (
+                <div key={device.id} className="companion-device-row">
+                  <div>
+                    <strong>{device.name}</strong>
+                    <span>{device.kind} · {zoneName(zones, deviceZone(device))} · {device.status}</span>
+                  </div>
+                  <button className={device.autopilot_enabled ? "active" : ""} onClick={() => toggleDeviceAutopilot(device)}>
+                    {device.autopilot_enabled ? "Autopilot" : "Manual"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="companion-band">
+          <div className="companion-section-head">
+            <div>
+              <div className="companion-eyebrow">Målinger</div>
+              <h2>Seneste signaler der påvirker anbefalinger.</h2>
+            </div>
+          </div>
+          {latestReadings.length === 0 ? (
+            <div className="companion-empty"><Gauge size={18} /> Ingen sensorhistorik endnu.</div>
+          ) : (
+            <div className="companion-reading-list">
+              {latestReadings.map((reading) => (
+                <div key={reading.id}>
+                  <strong>{reading.kind}</strong>
+                  <span>{reading.value ?? "-"}{reading.unit ? ` ${reading.unit}` : ""}</span>
+                  <small>{zoneName(zones, reading.zone_id)} · {new Date(reading.observed_at).toLocaleDateString("da-DK")}</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+      </section>
+
+      <section className="companion-band">
+        <div className="companion-section-head">
+          <div>
+            <div className="companion-eyebrow">Device-handlinger</div>
+            <h2>Ventiler og fysiske handlinger kræver tydelig godkendelse.</h2>
+          </div>
+          <ShieldCheck size={18} />
+        </div>
+        {pendingActions.length === 0 ? (
+          <div className="companion-empty"><CheckCircle2 size={18} /> Ingen afventende device-handlinger.</div>
+        ) : (
+          <div className="companion-device-actions">
+            {pendingActions.map((action) => (
+              <article key={action.id}>
+                <div>
+                  <span>{actionStatus(action.status)}</span>
+                  <h3>{action.action}</h3>
+                  {action.reason && <p>{action.reason}</p>}
+                  <small>{zoneName(zones, action.zone_id)}</small>
+                </div>
+                <div className="companion-task-actions">
+                  <Button variant="outline" size="sm" onClick={() => updateAction(action, "cancelled")}><XCircle size={14} className="mr-1.5" /> Nej</Button>
+                  <Button size="sm" onClick={() => updateAction(action, "approved")}><CheckCircle2 size={14} className="mr-1.5" /> Godkend</Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PlantInventory({
+  plants,
+  zones,
+  plantScores,
+  selectedPlantId,
+  onSelectPlant,
+  onScan,
+}: {
+  plants: Plant[];
+  zones: Zone[];
+  plantScores: Record<string, ReturnType<typeof computeHealthScore>>;
+  selectedPlantId: string | null;
+  onSelectPlant: (plantId: string) => void;
+  onScan: () => void;
+}) {
   if (plants.length === 0) {
     return (
       <div className="companion-band companion-empty">
@@ -479,13 +1140,13 @@ function PlantInventory({ plants, zones, onScan }: { plants: Plant[]; zones: Zon
   return (
     <div className="companion-plant-grid">
       {plants.map((plant) => (
-        <article key={plant.id} className="companion-plant-card">
+        <button key={plant.id} className={`companion-plant-card ${selectedPlantId === plant.id ? "active" : ""}`} onClick={() => onSelectPlant(plant.id)}>
           {plant.image_url ? <img src={plant.image_url} alt="" /> : <div className="companion-plant-fallback"><Sprout size={20} /></div>}
           <div>
             <h3>{plant.custom_name || plant.plants_catalog?.name_da || plant.plant_slug || "Plante"}</h3>
-            <p>{zones.find((z) => z.id === plant.zone_id)?.name ?? "Ikke placeret"} · {plant.health_status || "ukendt helbred"}</p>
+            <p>{zones.find((z) => z.id === plant.zone_id)?.name ?? "Ikke placeret"} · {plant.health_status || "ukendt helbred"} · {plantScores[plant.id]?.score ?? "-"} / 100</p>
           </div>
-        </article>
+        </button>
       ))}
     </div>
   );

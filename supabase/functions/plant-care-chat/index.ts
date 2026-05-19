@@ -22,7 +22,35 @@ Stil:
 - Vær konkret: nævn mængder, måneder, timing
 - Brug markdown med korte afsnit, lister, **fed** til vigtige pointer
 - Når brugerens have-data er relevant: REFERÉR konkret til den ("din tomatzone", "i går fik dit staudebed 6 mm regn")
-- Anbefal Havelandets produkter naturligt når relevant (frø, jord, gødning, robotklippere, vandingsudstyr)`;
+- Når rådet bør blive til handling, foreslå tydeligt: opret opgave, gem i journal, scan igen, åbn Havekompagnon eller mål haven
+- Ved komplekse problemer: slut med en kort "Handlingsplan" med 2-5 konkrete punkter, hver med timing
+- Hvis billed- eller diagnoseconfidence er lav, sig hvad brugeren skal fotografere eller observere næste gang
+- Anbefal kun produkter når det faktisk løser problemet; prioriter praktiske plejehandlinger først`;
+
+function buildClientContext(payload: {
+  mode?: string;
+  uiContext?: unknown;
+  diagnosis?: unknown;
+  identify?: unknown;
+  growth?: unknown;
+}) {
+  const lines: string[] = [];
+  if (payload.mode) lines.push(`AKTUEL ARBEJDSGANG: ${payload.mode}`);
+  if (payload.uiContext) {
+    lines.push(`VALGT APP-KONTEKST: ${JSON.stringify(payload.uiContext).slice(0, 6000)}`);
+  }
+  if (payload.diagnosis) {
+    lines.push(`STRUKTURERET DIAGNOSE FRA FOTO: ${JSON.stringify(payload.diagnosis).slice(0, 2500)}`);
+  }
+  if (payload.identify) {
+    lines.push(`STRUKTURERET PLANTEIDENTIFIKATION FRA FOTO: ${JSON.stringify(payload.identify).slice(0, 2500)}`);
+  }
+  if (payload.growth) {
+    lines.push(`STRUKTURERET VÆKSTTJEK FRA FOTO: ${JSON.stringify(payload.growth).slice(0, 2500)}`);
+  }
+  if (!lines.length) return "";
+  return `\n\n--- AKTUELT PLANTEPLEJE-WORKSPACE ---\n${lines.join("\n")}\n--- SLUT WORKSPACE ---`;
+}
 
 async function buildContext(authHeader: string | null) {
   if (!authHeader?.startsWith("Bearer ")) return null;
@@ -79,7 +107,9 @@ async function buildContext(authHeader: string | null) {
         if (dates.length) {
           lines.push(`VEJR (5d): ${dates.map((d: string, i: number) => `${d}: ${j.daily.precipitation_sum[i]}mm/${Math.round(j.daily.temperature_2m_max[i])}°`).join(" · ")}`);
         }
-      } catch {}
+      } catch {
+        console.warn("Weather context unavailable for plant-care-chat");
+      }
     }
 
     if (!lines.length) return null;
@@ -94,12 +124,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, hasImage } = await req.json();
+    const { messages, hasImage, mode, uiContext, diagnosis, identify, growth } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
     const ctx = await buildContext(req.headers.get("Authorization"));
-    const sys = BASE_PROMPT + (ctx ?? "");
+    const sys = BASE_PROMPT + (ctx ?? "") + buildClientContext({ mode, uiContext, diagnosis, identify, growth });
 
     const model = hasImage ? "google/gemini-2.5-pro" : "google/gemini-2.5-flash";
 

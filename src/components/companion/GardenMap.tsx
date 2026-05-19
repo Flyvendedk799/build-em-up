@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Camera, Droplets, Leaf, MapPin, Move, Radio, Sprout } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
-import { clampNormalizedPoint } from "@/lib/companionTypes";
+import { clampNormalizedPoint, type HealthScore, type ZoneInsight } from "@/lib/companionTypes";
 
 type Garden = Pick<Tables<"gardens">, "id" | "name" | "thumbnail_url" | "area_m2">;
 type Zone = Pick<Tables<"garden_zones">, "id" | "name" | "type" | "area_m2" | "soil" | "sun_exposure">;
@@ -22,8 +22,11 @@ type Props = {
   plants: Plant[];
   observations: Observation[];
   devices: Device[];
+  zoneScores?: Record<string, HealthScore>;
+  zoneInsights?: Record<string, ZoneInsight[]>;
   selectedZoneId?: string | null;
   onSelectZone: (zoneId: string | null) => void;
+  onSelectPlant?: (plantId: string) => void;
   onMovePlant: (id: string, x: number, y: number) => void;
   onMoveObservation: (id: string, x: number, y: number) => void;
   onMoveDevice: (id: string, x: number, y: number) => void;
@@ -64,8 +67,11 @@ export default function GardenMap({
   plants,
   observations,
   devices,
+  zoneScores = {},
+  zoneInsights = {},
   selectedZoneId,
   onSelectZone,
+  onSelectPlant,
   onMovePlant,
   onMoveObservation,
   onMoveDevice,
@@ -165,6 +171,16 @@ export default function GardenMap({
   }
 
   const visiblePins = selectedZoneId ? pins.filter((p) => p.zone_id === selectedZoneId || p.type === "device") : pins;
+  const selectedZone = selectedZoneId ? zones.find((zone) => zone.id === selectedZoneId) ?? null : null;
+  const zonePlants = selectedZoneId ? plants.filter((plant) => plant.zone_id === selectedZoneId) : plants;
+  const zoneObservations = selectedZoneId ? observations.filter((obs) => obs.zone_id === selectedZoneId) : observations;
+  const zoneDevices = selectedZoneId
+    ? devices.filter((device) => readZoneId(device.metadata) === selectedZoneId)
+    : devices;
+  const latestDiagnosis = zoneObservations.find((obs) => obs.kind === "diagnosis" || obs.kind === "bed_scan");
+  const latestGrowth = zoneObservations.find((obs) => obs.kind === "growth");
+  const selectedScore = selectedZoneId ? zoneScores[selectedZoneId] : null;
+  const selectedInsights = selectedZoneId ? zoneInsights[selectedZoneId] ?? [] : [];
 
   return (
     <div className="companion-map-shell">
@@ -225,6 +241,7 @@ export default function GardenMap({
               className={`companion-pin companion-pin--${pin.tone} ${isDragging ? "dragging" : ""}`}
               style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
               onPointerDown={(e) => startDrag(pin, e)}
+              onClick={() => pin.type === "plant" && onSelectPlant?.(pin.id)}
               title={`${pin.label} · træk for at flytte`}
             >
               {pin.type === "plant" && <Sprout size={15} />}
@@ -235,7 +252,110 @@ export default function GardenMap({
             </button>
           );
         })}
+
+        <div className="companion-map-legend" aria-label="Kortlag">
+          <span><i className="plant" /> Plante</span>
+          <span><i className="photo" /> Foto</span>
+          <span><i className="warn" /> Risiko</span>
+          <span><i className="device" /> Sensor</span>
+        </div>
+      </div>
+
+      <div className="companion-zone-memory">
+        <article className="companion-memory-summary">
+          <div>
+            <div className="companion-eyebrow">{selectedZone ? "Zonehukommelse" : "Havehukommelse"}</div>
+            <h3>{selectedZone?.name ?? "Hele haven"}</h3>
+            <p>
+              {selectedZone
+                ? `${selectedZone.type} · ${selectedZone.area_m2 ? `${Math.round(selectedZone.area_m2)} m2` : "areal ukendt"} · ${selectedZone.soil || "jord ukendt"}`
+                : "Vælg en zone på kortet for at se lokal historik og anbefalingsgrundlag."}
+            </p>
+          </div>
+          <div className="companion-memory-kpis">
+            <span><Sprout size={14} /> {zonePlants.length} planter</span>
+            <span><Camera size={14} /> {zoneObservations.length} scans</span>
+            <span><Radio size={14} /> {zoneDevices.length} enheder</span>
+          </div>
+        </article>
+
+        <div className="companion-memory-grid">
+          <MemoryCard
+            icon={<Leaf size={15} />}
+            title="Sundhed"
+            value={selectedScore ? `${selectedScore.score}/100 · ${selectedScore.status}` : "Vælg en zone"}
+            meta={selectedScore?.explanation || "Scoren beregnes fra scans, opgaver og sensorer"}
+          />
+          <MemoryCard
+            icon={<Leaf size={15} />}
+            title="Seneste diagnose"
+            value={latestDiagnosis?.caption || resultTitle(latestDiagnosis?.ai_result) || "Ingen diagnose endnu"}
+            meta={latestDiagnosis ? dateLabel(latestDiagnosis.created_at) : "Scan en plante eller et bed"}
+          />
+          <MemoryCard
+            icon={<Sprout size={15} />}
+            title="Seneste vækst"
+            value={latestGrowth?.caption || resultTitle(latestGrowth?.ai_result) || "Ingen vækstlinje endnu"}
+            meta={latestGrowth ? dateLabel(latestGrowth.created_at) : "Kræver mindst to observationer for trend"}
+          />
+          <MemoryCard
+            icon={<Droplets size={15} />}
+            title="Sensorlag"
+            value={zoneDevices.length ? `${zoneDevices.length} enheder placeret` : "Ingen enheder placeret"}
+            meta={zoneDevices[0]?.status || "Tilføj sensor eller ventil"}
+          />
+        </div>
+
+        {selectedInsights.length > 0 && (
+          <div className="companion-zone-insights">
+            {selectedInsights.map((insight) => (
+              <article key={`${insight.action_kind}-${insight.title}`}>
+                <span>{insight.priority}</span>
+                <strong>{insight.title}</strong>
+                <p>{insight.reason}</p>
+              </article>
+            ))}
+          </div>
+        )}
+
+        {zoneObservations.length > 0 && (
+          <div className="companion-memory-timeline">
+            {zoneObservations.slice(0, 5).map((obs) => (
+              <div key={obs.id}>
+                {obs.image_url ? <img src={obs.image_url} alt="" /> : <Camera size={15} />}
+                <div>
+                  <strong>{obs.caption || resultTitle(obs.ai_result) || obs.kind}</strong>
+                  <span>{obs.kind} · {dateLabel(obs.created_at)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function dateLabel(iso?: string | null) {
+  if (!iso) return "uden dato";
+  return new Date(iso).toLocaleDateString("da-DK", { day: "numeric", month: "short" });
+}
+
+function resultTitle(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  return String(row.diagnosis || row.summary || row.name_da || row.stage || "");
+}
+
+function MemoryCard({ icon, title, value, meta }: { icon: React.ReactNode; title: string; value: string; meta: string }) {
+  return (
+    <article className="companion-memory-card">
+      <div className="companion-metric-icon">{icon}</div>
+      <div>
+        <span>{title}</span>
+        <strong>{value}</strong>
+        <small>{meta}</small>
+      </div>
+    </article>
   );
 }
