@@ -116,6 +116,11 @@ function readCompanionHandoff(): CompanionHandoff | null {
   }
 }
 
+function readStoredView(): View {
+  const raw = localStorage.getItem("companion.view");
+  return raw && VIEW_KEYS.has(raw as View) ? raw as View : "today";
+}
+
 function priorityOf(value: string | null): CareAction["priority"] {
   if (value === "urgent" || value === "high" || value === "low") return value;
   return "normal";
@@ -200,7 +205,7 @@ export default function GardenCompanion() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { activeGardenId, setActive } = useActiveGarden();
-  const [view, setView] = useState<View>(() => (localStorage.getItem("companion.view") as View) || "today");
+  const [view, setView] = useState<View>(readStoredView);
   const [loading, setLoading] = useState(true);
   const [gardens, setGardens] = useState<Garden[]>([]);
   const [garden, setGarden] = useState<Garden | null>(null);
