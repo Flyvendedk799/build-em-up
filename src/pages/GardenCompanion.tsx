@@ -59,6 +59,16 @@ type CatalogCalendar = {
   winterize_months?: number[] | null;
 };
 
+type CompanionHandoff = {
+  source?: string;
+  gardenId?: string | null;
+  zoneId?: string | null;
+  plantId?: string | null;
+  view?: View;
+  scanMode?: "identify" | "diagnosis" | "growth" | "bed_scan" | "photo" | "harvest";
+  createdAt?: string;
+};
+
 const PRIMARY: { key: View; label: string }[] = [
   { key: "today", label: "I dag" },
   { key: "round", label: "Havegang" },
@@ -77,6 +87,34 @@ const SECONDARY: { key: View; label: string; icon: React.ElementType }[] = [
   { key: "community", label: "Nabolag", icon: Users },
   { key: "insights", label: "Indsigt", icon: BarChart3 },
 ];
+
+const VIEW_KEYS = new Set<View>([
+  ...PRIMARY.map((item) => item.key),
+  ...SECONDARY.map((item) => item.key),
+]);
+
+function readCompanionHandoff(): CompanionHandoff | null {
+  try {
+    const raw = localStorage.getItem("companion.handoff");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const view = typeof parsed.view === "string" && VIEW_KEYS.has(parsed.view as View) ? parsed.view as View : undefined;
+    const scanMode = parsed.scanMode === "identify" || parsed.scanMode === "diagnosis" || parsed.scanMode === "growth" || parsed.scanMode === "bed_scan" || parsed.scanMode === "photo" || parsed.scanMode === "harvest"
+      ? parsed.scanMode
+      : undefined;
+    return {
+      source: typeof parsed.source === "string" ? parsed.source : undefined,
+      gardenId: typeof parsed.gardenId === "string" ? parsed.gardenId : null,
+      zoneId: typeof parsed.zoneId === "string" ? parsed.zoneId : null,
+      plantId: typeof parsed.plantId === "string" ? parsed.plantId : null,
+      view,
+      scanMode,
+      createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function priorityOf(value: string | null): CareAction["priority"] {
   if (value === "urgent" || value === "high" || value === "low") return value;
@@ -283,6 +321,30 @@ export default function GardenCompanion() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!garden || loading) return;
+    const handoff = readCompanionHandoff();
+    if (!handoff) return;
+    if (handoff.gardenId && handoff.gardenId !== garden.id) return;
+    if (handoff.createdAt && Date.now() - new Date(handoff.createdAt).getTime() > 10 * 60_000) {
+      localStorage.removeItem("companion.handoff");
+      return;
+    }
+
+    const nextZone = handoff.zoneId && zones.some((zone) => zone.id === handoff.zoneId) ? handoff.zoneId : null;
+    const nextPlant = handoff.plantId && plants.some((plant) => plant.id === handoff.plantId) ? handoff.plantId : null;
+    const plantZone = nextPlant ? plants.find((plant) => plant.id === nextPlant)?.zone_id ?? null : null;
+
+    setSelectedZoneId(nextZone ?? plantZone);
+    setSelectedPlantId(nextPlant);
+    if (handoff.scanMode) {
+      setScanMode(handoff.scanMode);
+      setScanPlantId(nextPlant);
+    }
+    if (handoff.view) setViewPersist(handoff.view);
+    localStorage.removeItem("companion.handoff");
+  }, [garden, loading, plants, zones]);
 
   useEffect(() => {
     if (!garden?.latitude || !garden?.longitude) {

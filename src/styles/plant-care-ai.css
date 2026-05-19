@@ -656,6 +656,61 @@
   margin-top: 10px;
 }
 
+.plant-ai-fact-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.plant-ai-fact-grid article {
+  display: grid;
+  gap: 4px;
+  min-height: 82px;
+  align-content: center;
+  padding: 10px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 10px;
+  background: var(--ink-50);
+}
+
+.plant-ai-fact-grid article.tone-ok {
+  border-color: rgba(31, 122, 77, .18);
+  background: rgba(31, 122, 77, .06);
+}
+
+.plant-ai-fact-grid article.tone-warn {
+  border-color: rgba(161, 95, 0, .2);
+  background: rgba(161, 95, 0, .07);
+}
+
+.plant-ai-fact-grid article.tone-risk {
+  border-color: rgba(180, 35, 24, .2);
+  background: rgba(180, 35, 24, .07);
+}
+
+.plant-ai-fact-grid span {
+  color: var(--ink-500);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.plant-ai-fact-grid strong {
+  color: var(--ink-900);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.plant-ai-fact-grid small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-500);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .plant-ai-mini-list span,
 .plant-ai-task-list div {
   display: grid;
@@ -682,16 +737,63 @@
   padding: 9px 8px;
 }
 
+.plant-ai-inline-actions button:disabled,
+.plant-ai-result-card button:disabled,
+.plant-ai-action:disabled,
+.plant-ai-action-grid button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
 .plant-ai-task-list {
   display: grid;
   gap: 8px;
 }
 
 .plant-ai-task-list p,
-.plant-ai-photo-grid p {
+.plant-ai-photo-grid p,
+.plant-ai-plan-preview p {
   margin: 0;
   color: var(--ink-500);
   font-size: 13px;
+}
+
+.plant-ai-plan-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.plant-ai-plan-preview article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(20, 39, 29, .08);
+  border-radius: 10px;
+  background: var(--ink-50);
+}
+
+.plant-ai-plan-preview span {
+  color: var(--forest-800);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.plant-ai-plan-preview strong {
+  color: var(--ink-900);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.plant-ai-plan-preview small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-500);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .plant-ai-task-list div {

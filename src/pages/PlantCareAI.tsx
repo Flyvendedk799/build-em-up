@@ -5,9 +5,11 @@ import {
   AlertTriangle,
   ArrowRight,
   Bot,
+  CalendarPlus,
   CalendarDays,
   Camera,
   Check,
+  ClipboardCheck,
   ClipboardList,
   ImagePlus,
   Leaf,
@@ -20,6 +22,7 @@ import {
   Ruler,
   Search,
   Send,
+  Share2,
   Sparkles,
   Sprout,
   Stethoscope,
@@ -82,6 +85,21 @@ type ScanBundle = {
   growth?: GrowthResult | null;
   taskId?: string | null;
   plantCreatedId?: string | null;
+};
+
+type CarePlanItem = {
+  title: string;
+  reason: string;
+  kind: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  dueDays: number;
+};
+
+type ContextFact = {
+  label: string;
+  value: string;
+  hint: string;
+  tone?: "ok" | "warn" | "risk";
 };
 
 const CARE_MODES: { key: CareMode; label: string; hint: string; icon: LucideIcon }[] = [
@@ -236,6 +254,139 @@ function latestAssistantContent(messages: Msg[]) {
   return "";
 }
 
+function normalizeKey(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function addCarePlanItem(items: CarePlanItem[], item: CarePlanItem) {
+  if (!item.title.trim() || items.some((existing) => normalizeKey(existing.title) === normalizeKey(item.title))) return;
+  items.push({
+    ...item,
+    title: compactTitle(item.title, "Plantepleje-opgave"),
+    reason: item.reason.trim().slice(0, 1000),
+  });
+}
+
+function extractActionLines(text: string) {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/^[-*•\d.()\s]+/, "").trim())
+    .filter((line) => line.length >= 18)
+    .filter((line) => /(skal|bør|vand|beskær|gød|fjern|tjek|tag|så|plant|dæk|flyt|klip|høst|følg)/i.test(line))
+    .slice(0, 5);
+}
+
+function buildCarePlanItems(args: {
+  scan: ScanBundle | null;
+  assistantText: string;
+  mode: CareMode;
+  zoneName: string;
+  plantName: string;
+}) {
+  const items: CarePlanItem[] = [];
+  const { scan, assistantText, mode, zoneName, plantName } = args;
+
+  if (scan?.diagnosis) {
+    const diagnosis = scan.diagnosis.diagnosis ?? "planteproblem";
+    const priority = scan.diagnosis.severity === "high" ? "urgent" : scan.diagnosis.severity === "medium" ? "high" : "normal";
+    if (scan.diagnosis.treatment) {
+      addCarePlanItem(items, {
+        kind: "diagnose",
+        title: `Behandl: ${diagnosis}`,
+        reason: scan.diagnosis.treatment,
+        priority,
+        dueDays: scan.diagnosis.severity === "high" ? 0 : 1,
+      });
+    }
+    addCarePlanItem(items, {
+      kind: "issue_resolution",
+      title: `Tag kontrolfoto: ${diagnosis}`,
+      reason: `Følg op på ${plantName} i ${zoneName}, og vurder om symptomerne er bedre.`,
+      priority: scan.diagnosis.severity === "high" ? "high" : "normal",
+      dueDays: 3,
+    });
+    if (scan.diagnosis.prevention) {
+      addCarePlanItem(items, {
+        kind: "prevention",
+        title: `Forebyg gentagelse: ${diagnosis}`,
+        reason: scan.diagnosis.prevention,
+        priority: "normal",
+        dueDays: 7,
+      });
+    }
+  }
+
+  if (scan?.identify) {
+    const name = scan.identify.name_da ?? plantName;
+    addCarePlanItem(items, {
+      kind: "plant_setup",
+      title: `Placér og plej: ${name}`,
+      reason: scan.identify.care_tip ?? `Tjek lys, jord og vandbehov for ${name} i ${zoneName}.`,
+      priority: "normal",
+      dueDays: 1,
+    });
+    if (scan.identify.suggested_zone_fit) {
+      addCarePlanItem(items, {
+        kind: "zone_fit",
+        title: `Tjek placering for ${name}`,
+        reason: scan.identify.suggested_zone_fit,
+        priority: "normal",
+        dueDays: 2,
+      });
+    }
+  }
+
+  if (scan?.growth) {
+    const readiness = String(scan.growth.harvest_readiness ?? "").toLowerCase();
+    if (readiness.includes("klar") || readiness.includes("ready")) {
+      addCarePlanItem(items, {
+        kind: "harvest_ready",
+        title: `Høstklar: ${plantName}`,
+        reason: String(scan.growth.next_action ?? "Væksttjekket vurderer planten som klar til høst."),
+        priority: "high",
+        dueDays: 1,
+      });
+    }
+    addCarePlanItem(items, {
+      kind: "growth_rescan",
+      title: `Gentag vækstfoto: ${plantName}`,
+      reason: String(scan.growth.next_action ?? "Tag et nyt foto fra samme vinkel for at forbedre væksttrenden."),
+      priority: "normal",
+      dueDays: 5,
+    });
+  }
+
+  for (const line of extractActionLines(assistantText)) {
+    addCarePlanItem(items, {
+      kind: mode === "season" ? "season" : "ai_advice",
+      title: compactTitle(line, "Plantepleje-opgave"),
+      reason: line,
+      priority: mode === "diagnose" ? "high" : "normal",
+      dueDays: items.length === 0 ? 1 : Math.min(7, items.length + 1),
+    });
+  }
+
+  return items.slice(0, 6);
+}
+
+function dueDateFromDays(days: number) {
+  return new Date(Date.now() + days * 86400_000).toISOString();
+}
+
+function escapeIcs(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function icsDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return icsDate(new Date().toISOString());
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
 export default function PlantCareAI() {
   const { user, session, loading: authLoading } = useAuth();
   const { activeGardenId, setActive } = useActiveGarden();
@@ -293,6 +444,63 @@ export default function PlantCareAI() {
     () => observations.filter((observation) => observation.image_url).slice(0, 4),
     [observations],
   );
+  const selectedOpenTasks = useMemo(() => openTasks.filter((task) => {
+    if (selectedPlantId) return task.plant_id === selectedPlantId;
+    if (selectedZoneId) return task.zone_id === selectedZoneId;
+    return true;
+  }), [openTasks, selectedPlantId, selectedZoneId]);
+  const selectedObservations = useMemo(() => observations.filter((observation) => {
+    if (selectedPlantId) return observation.plant_id === selectedPlantId;
+    if (selectedZoneId) return observation.zone_id === selectedZoneId;
+    return true;
+  }), [observations, selectedPlantId, selectedZoneId]);
+  const selectedIssue = useMemo(() => healthLogs.find((log) => {
+    if (selectedPlantId) return log.plant_id === selectedPlantId;
+    if (selectedZoneId) return log.zone_id === selectedZoneId;
+    return log.severity === "high" || log.severity === "medium";
+  }) ?? null, [healthLogs, selectedPlantId, selectedZoneId]);
+  const latestReading = useMemo(() => deviceReadings.find((reading) => {
+    if (!selectedZoneId) return true;
+    return reading.zone_id === selectedZoneId;
+  }) ?? null, [deviceReadings, selectedZoneId]);
+  const contextFacts = useMemo<ContextFact[]>(() => {
+    const facts: ContextFact[] = [];
+    facts.push({
+      label: "Valgt område",
+      value: selectedPlant ? plantLabel(selectedPlant) : zoneLabel(selectedZone),
+      hint: selectedPlant ? `I ${zoneLabel(zones.find((zone) => zone.id === selectedPlant.zone_id))}` : `${selectedObservations.length} observationer matcher`,
+      tone: selectedIssue ? "warn" : "ok",
+    });
+    facts.push({
+      label: "Plejestatus",
+      value: selectedIssue?.diagnosis ?? selectedPlant?.health_status ?? (urgentIssues.length ? `${urgentIssues.length} risici` : "Stabil"),
+      hint: selectedIssue?.treatment ?? `${selectedOpenTasks.length} åbne opgaver i fokus`,
+      tone: selectedIssue?.severity === "high" ? "risk" : selectedIssue ? "warn" : "ok",
+    });
+    if (selectedZone) {
+      facts.push({
+        label: "Bedmiljø",
+        value: [selectedZone.sun_exposure || "lys ukendt", selectedZone.soil || "jord ukendt"].join(" · "),
+        hint: selectedZone.area_m2 ? `${Math.round(selectedZone.area_m2)} m2 registreret` : "Bruges aktivt i AI-rådet",
+      });
+    }
+    if (latestReading) {
+      facts.push({
+        label: "Seneste måling",
+        value: `${latestReading.kind}${latestReading.value !== null ? ` ${Math.round(latestReading.value)}${latestReading.unit ?? ""}` : ""}`,
+        hint: `Målt ${formatDate(latestReading.observed_at)}`,
+        tone: latestReading.kind.includes("moisture") && typeof latestReading.value === "number" && latestReading.value < 28 ? "warn" : "ok",
+      });
+    }
+    return facts.slice(0, 4);
+  }, [latestReading, selectedIssue, selectedObservations.length, selectedOpenTasks.length, selectedPlant, selectedZone, urgentIssues.length, zones]);
+  const carePlanPreview = useMemo(() => buildCarePlanItems({
+    scan: lastScan,
+    assistantText: lastAssistantText || latestAssistantContent(messages),
+    mode: careMode,
+    zoneName: zoneLabel(selectedZone),
+    plantName: plantLabel(selectedPlant),
+  }).slice(0, 4), [careMode, lastAssistantText, lastScan, messages, selectedPlant, selectedZone]);
   const starters = STARTERS[careMode];
   const contextSnapshot = useMemo(() => ({
     garden: selectedGarden ? {
@@ -1011,6 +1219,177 @@ export default function PlantCareAI() {
     }
   }
 
+  async function createCarePlanFromAdvice() {
+    if (!user || !selectedGardenId) {
+      toast.error("Vælg en have først");
+      return;
+    }
+    const assistantText = lastAssistantText || latestAssistantContent(messages);
+    const items = buildCarePlanItems({
+      scan: lastScan,
+      assistantText,
+      mode: careMode,
+      zoneName: zoneLabel(selectedZone),
+      plantName: plantLabel(selectedPlant),
+    });
+    if (items.length === 0) {
+      toast.error("Jeg mangler et AI-råd eller en scan at lave plan ud fra");
+      return;
+    }
+
+    const existingTitles = new Set(openTasks.map((task) => normalizeKey(task.title)));
+    const rows = items
+      .filter((item) => !existingTitles.has(normalizeKey(item.title)))
+      .map((item) => ({
+        user_id: user.id,
+        garden_id: selectedGardenId,
+        zone_id: selectedZoneId,
+        plant_id: selectedPlantId,
+        observation_id: lastScan?.observationId ?? null,
+        kind: item.kind,
+        title: item.title,
+        notes: item.reason,
+        due_at: dueDateFromDays(item.dueDays),
+        priority: item.priority,
+        source: lastScan ? "scan" : "ai",
+        reason: item.reason,
+        confidence: scanConfidence(lastScan),
+        payload: {
+          source: "plant-care-ai-plan",
+          mode: careMode,
+          scan_summary: scanSummary(lastScan),
+        } as Json,
+      }));
+
+    if (rows.length === 0) {
+      toast.info("Handlingsplanen findes allerede i opgaverne");
+      return;
+    }
+
+    setActionBusy("plan");
+    try {
+      const { error } = await supabase.from("task_log").insert(rows);
+      if (error) throw error;
+      await loadGardenDetails(selectedGardenId);
+      toast.success(`${rows.length} plejehandlinger er oprettet`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Kunne ikke oprette handlingsplan");
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  function openCompanion(view: "today" | "map" | "scan" | "plan" | "plants" | "journal" | "devices" | "coach" = "map") {
+    if (selectedGardenId) setActive(selectedGardenId);
+    try {
+      localStorage.setItem("companion.view", view);
+      localStorage.setItem("companion.handoff", JSON.stringify({
+        source: "plant-care-ai",
+        gardenId: selectedGardenId,
+        zoneId: selectedZoneId,
+        plantId: selectedPlantId,
+        view,
+        scanMode: careMode === "identify" ? "identify" : careMode === "growth" ? "growth" : "diagnosis",
+        createdAt: new Date().toISOString(),
+      }));
+    } catch {
+      // localStorage can be unavailable in private browsing; navigation still works.
+    }
+    navigate("/havekompagnon");
+  }
+
+  function exportCareCalendar() {
+    const tasksForExport = (selectedOpenTasks.length ? selectedOpenTasks : openTasks).slice(0, 12);
+    const assistantText = lastAssistantText || latestAssistantContent(messages);
+    const fallbackItems = tasksForExport.length === 0
+      ? buildCarePlanItems({
+          scan: lastScan,
+          assistantText,
+          mode: careMode,
+          zoneName: zoneLabel(selectedZone),
+          plantName: plantLabel(selectedPlant),
+        })
+      : [];
+
+    const events = tasksForExport.length > 0
+      ? tasksForExport.map((task) => ({
+          uid: task.id,
+          title: task.title,
+          description: task.reason ?? `Fra Plantepleje AI · ${zoneLabel(selectedZone)} · ${plantLabel(selectedPlant)}`,
+          dueAt: task.due_at ?? dueDateFromDays(1),
+        }))
+      : fallbackItems.map((item, index) => ({
+          uid: `plant-care-ai-${Date.now()}-${index}`,
+          title: item.title,
+          description: item.reason,
+          dueAt: dueDateFromDays(item.dueDays),
+        }));
+
+    if (events.length === 0) {
+      toast.error("Der er ingen opgaver eller plan at eksportere endnu");
+      return;
+    }
+
+    const body = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Havelandet//Plantepleje AI//DA",
+      "CALSCALE:GREGORIAN",
+      ...events.flatMap((event) => [
+        "BEGIN:VEVENT",
+        `UID:${escapeIcs(event.uid)}@havelandet.dk`,
+        `DTSTAMP:${icsDate(new Date().toISOString())}`,
+        `DTSTART:${icsDate(event.dueAt)}`,
+        "DURATION:PT30M",
+        `SUMMARY:${escapeIcs(event.title)}`,
+        `DESCRIPTION:${escapeIcs(event.description)}`,
+        "END:VEVENT",
+      ]),
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const blob = new Blob([body], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `plantepleje-${new Date().toISOString().slice(0, 10)}.ics`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
+    toast.success("Kalenderfil klar");
+  }
+
+  async function shareCareSummary() {
+    const assistantText = lastAssistantText || latestAssistantContent(messages);
+    const lines = [
+      `Plantepleje AI · ${selectedGarden?.name ?? "Min have"}`,
+      `Fokus: ${zoneLabel(selectedZone)} · ${plantLabel(selectedPlant)}`,
+      lastScan ? `Scan: ${scanSummary(lastScan)}` : null,
+      assistantText ? assistantText.slice(0, 900) : null,
+      selectedOpenTasks.length ? `Åbne opgaver: ${selectedOpenTasks.slice(0, 4).map((task) => task.title).join(", ")}` : null,
+    ].filter(Boolean).join("\n\n");
+
+    if (!lines.trim()) {
+      toast.error("Der er ikke noget at dele endnu");
+      return;
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Plantepleje AI", text: lines });
+        return;
+      }
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(lines);
+        toast.success("Plejerådet er kopieret");
+        return;
+      }
+      toast.info("Deling understøttes ikke i denne browser");
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast.error(error instanceof Error ? error.message : "Kunne ikke dele");
+    }
+  }
+
   if (authLoading) return null;
 
   if (!user) {
@@ -1047,7 +1426,7 @@ export default function PlantCareAI() {
               <button className="btn btn-primary" onClick={() => cameraInputRef.current?.click()}>
                 <Camera size={16} /> Tag foto
               </button>
-              <button className="btn btn-ghost" onClick={() => navigate("/havekompagnon")}>
+              <button className="btn btn-ghost" onClick={() => openCompanion("map")}>
                 <MapPinned size={16} /> Havekompagnon
               </button>
               <button className="btn btn-ghost" onClick={() => navigate("/havemaaler")}>
@@ -1185,7 +1564,7 @@ export default function PlantCareAI() {
                   <span>{modeLabel(careMode)}</span>
                   <strong>{zoneLabel(selectedZone)} · {plantLabel(selectedPlant)}</strong>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => navigate("/havekompagnon")}>
+                <button className="btn btn-ghost btn-sm" onClick={() => openCompanion("map")}>
                   <MapPinned size={14} /> Åbn kort
                 </button>
               </div>
@@ -1242,10 +1621,16 @@ export default function PlantCareAI() {
                               <button type="button" onClick={() => void createTaskFromAdvice("assistant")} disabled={Boolean(actionBusy)}>
                                 <ClipboardList size={14} /> Opret opgave
                               </button>
+                              <button type="button" onClick={() => void createCarePlanFromAdvice()} disabled={Boolean(actionBusy)}>
+                                <ClipboardCheck size={14} /> Handlingsplan
+                              </button>
                               <button type="button" onClick={() => void saveAdviceToJournal()} disabled={Boolean(actionBusy)}>
                                 <NotebookPen size={14} /> Gem journal
                               </button>
-                              <button type="button" onClick={() => navigate("/havekompagnon")}>
+                              <button type="button" onClick={exportCareCalendar}>
+                                <CalendarPlus size={14} /> Kalender
+                              </button>
+                              <button type="button" onClick={() => openCompanion("map")}>
                                 <MapPinned size={14} /> Se i Havekompagnon
                               </button>
                             </div>
@@ -1306,6 +1691,19 @@ export default function PlantCareAI() {
 
             <aside className="plant-ai-rail">
               <section>
+                <h3>AI-forberedelse</h3>
+                <div className="plant-ai-fact-grid">
+                  {contextFacts.map((fact) => (
+                    <article key={`${fact.label}-${fact.value}`} className={fact.tone ? `tone-${fact.tone}` : ""}>
+                      <span>{fact.label}</span>
+                      <strong>{fact.value}</strong>
+                      <small>{fact.hint}</small>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section>
                 <h3>Havekontekst</h3>
                 <div className="plant-ai-context-card">
                   <MapPinned size={18} />
@@ -1345,18 +1743,47 @@ export default function PlantCareAI() {
               </section>
 
               <section>
+                <h3>Foreslået handlingsplan</h3>
+                <div className="plant-ai-plan-preview">
+                  {carePlanPreview.length === 0 && <p>Send et råd eller tag en scan, så samler AI'en næste trin her.</p>}
+                  {carePlanPreview.map((item) => (
+                    <article key={`${item.kind}-${item.title}`}>
+                      <span>{item.dueDays === 0 ? "I dag" : `Om ${item.dueDays} dage`}</span>
+                      <strong>{item.title}</strong>
+                      <small>{item.reason}</small>
+                    </article>
+                  ))}
+                </div>
+                {carePlanPreview.length > 0 && (
+                  <button className="plant-ai-action" onClick={() => void createCarePlanFromAdvice()} disabled={Boolean(actionBusy)}>
+                    {actionBusy === "plan" ? <Loader2 className="spin" size={15} /> : <ClipboardCheck size={15} />}
+                    Opret hele planen
+                  </button>
+                )}
+              </section>
+
+              <section>
                 <h3>Gem videre</h3>
                 <div className="plant-ai-action-grid">
                   <button onClick={() => void createTaskFromAdvice("assistant")} disabled={Boolean(actionBusy)}>
                     <ClipboardList size={15} /> Opgave
                   </button>
+                  <button onClick={() => void createCarePlanFromAdvice()} disabled={Boolean(actionBusy)}>
+                    <ClipboardCheck size={15} /> Plan
+                  </button>
                   <button onClick={() => void saveAdviceToJournal()} disabled={Boolean(actionBusy)}>
                     <NotebookPen size={15} /> Journal
                   </button>
-                  <button onClick={() => navigate("/havekompagnon")}>
+                  <button onClick={exportCareCalendar}>
+                    <CalendarPlus size={15} /> Kalender
+                  </button>
+                  <button onClick={() => void shareCareSummary()}>
+                    <Share2 size={15} /> Del
+                  </button>
+                  <button onClick={() => openCompanion("map")}>
                     <MapPinned size={15} /> Kort
                   </button>
-                  <button onClick={() => navigate("/vanding")}>
+                  <button onClick={() => openCompanion("plan")}>
                     <Leaf size={15} /> Plejeplan
                   </button>
                 </div>
