@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, CSSProperties, ElementType, FormEvent, ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Bell, Bot, CalendarDays, CheckCircle2, CloudSun, Database, Link2, MapPinned, PauseCircle, PlugZap, RefreshCcw, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Bell, Bot, CalendarDays, CheckCircle2, CloudSun, Database, Link2, MapPinned, PauseCircle, PlugZap, RefreshCcw, Ruler, ShieldCheck, Sparkles } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
@@ -42,6 +42,9 @@ const DEFAULT_PROFILE_SYNC: ProfileSync = {
   deviceSignals: true,
   handoff: true,
 };
+
+const editMeasurementPath = (gardenId: string, next = "/konto") =>
+  `/havemaaler?garden=${gardenId}&next=${encodeURIComponent(next)}`;
 
 const PROVIDER_ICONS: Record<string, ElementType> = {
   "profile-context": ShieldCheck,
@@ -396,13 +399,16 @@ export default function Account() {
                         <span>·</span>
                         <span>{zoneCounts[g.id] || 0} zoner</span>
                       </div>
-                      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                         {active ? (
                           <span className="btn btn-ghost btn-sm" style={{ pointerEvents: "none", color: "var(--forest-800)" }}>✓ Aktiv</span>
                         ) : (
                           <button className="btn btn-ghost btn-sm" onClick={() => { setActive(g.id); toast.success(`${g.name} er nu aktiv`); }}>Brug denne</button>
                         )}
-                        <Link to="/havekompagnon" className="btn btn-ghost btn-sm">Havekompagnon</Link>
+                        <Link to={editMeasurementPath(g.id)} className="btn btn-ghost btn-sm">
+                          <Ruler size={14} /> Rediger måling
+                        </Link>
+                        <Link to="/havekompagnon" onClick={() => setActive(g.id)} className="btn btn-ghost btn-sm">Havekompagnon</Link>
                       </div>
                     </div>
                   </div>

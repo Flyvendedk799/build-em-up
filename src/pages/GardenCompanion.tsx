@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BarChart3, Bot, CalendarDays, Camera, CheckCircle2, CloudSun, Droplets, Footprints, Gauge, Leaf, MapPin, NotebookPen, PlugZap, Radio, ShieldCheck, Sprout, Users, XCircle } from "lucide-react";
+import { BarChart3, Bot, CalendarDays, Camera, CheckCircle2, CloudSun, Droplets, Footprints, Gauge, Leaf, MapPin, NotebookPen, PlugZap, Radio, Ruler, ShieldCheck, Sprout, Users, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { Button } from "@/components/ui/button";
@@ -92,6 +92,9 @@ const VIEW_KEYS = new Set<View>([
   ...PRIMARY.map((item) => item.key),
   ...SECONDARY.map((item) => item.key),
 ]);
+
+const editMeasurementPath = (gardenId: string, next = "/havekompagnon") =>
+  `/havemaaler?garden=${gardenId}&next=${encodeURIComponent(next)}`;
 
 function readCompanionHandoff(): CompanionHandoff | null {
   try {
@@ -650,15 +653,20 @@ export default function GardenCompanion() {
             <h1>Din levende have på kort, kamera og plan.</h1>
             <p>Scan planter, placer fotos, følg vækst, opdage sygdomme og lad smart vanding arbejde sammen med vejret.</p>
           </div>
-          {gardens.length > 1 && (
-            <div className="companion-garden-switch">
-              {gardens.map((g) => (
-                <button key={g.id} className={g.id === garden.id ? "active" : ""} onClick={() => setActive(g.id)}>
-                  {g.name}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="companion-page-actions">
+            <Link to={editMeasurementPath(garden.id)} className="btn btn-ghost btn-sm">
+              <Ruler size={14} /> Rediger måling
+            </Link>
+            {gardens.length > 1 && (
+              <div className="companion-garden-switch">
+                {gardens.map((g) => (
+                  <button key={g.id} className={g.id === garden.id ? "active" : ""} onClick={() => setActive(g.id)}>
+                    {g.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </header>
 
         <ExperienceRail

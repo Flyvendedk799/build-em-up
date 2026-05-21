@@ -37,6 +37,9 @@ const MONTH_TASKS_DA: Record<number, string[]> = {
   11: ["Beskær løvfældende træer", "Frostsikring af krukker", "Planlæg næste sæson"],
 };
 
+const editMeasurementPath = (gardenId: string, next = "/min-have") =>
+  `/havemaaler?garden=${gardenId}&next=${encodeURIComponent(next)}`;
+
 export default function MinHave() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -258,7 +261,7 @@ export default function MinHave() {
               <Panel
                 title="Haven"
                 subtitle={activeGarden.address || "Din have"}
-                action={<Link to="/havemaaler" className="btn btn-ghost btn-sm">Rediger</Link>}
+                action={<Link to={editMeasurementPath(activeGarden.id)} className="btn btn-ghost btn-sm">Rediger</Link>}
               >
                 <div style={{
                   position: "relative",
@@ -316,7 +319,7 @@ export default function MinHave() {
               }}>
                 <Shortcut to="/havekompagnon" icon={<Droplets />} title="Havekompagnon" sub="Kort, scan og smart vanding" />
                 <Shortcut to="/ai" icon={<MessageSquare />} title="Plantepleje AI" sub="Diagnose & rådgivning" />
-                <Shortcut to="/havemaaler" icon={<Ruler />} title="Havemåler" sub="Mål bede, plæne, terrasse" />
+                <Shortcut to={editMeasurementPath(activeGarden.id)} icon={<Ruler />} title="Havemåler" sub="Mål bede, plæne, terrasse" />
                 <Shortcut to="/webshop" icon={<ShoppingBag />} title="Webshop" sub="Frø, gødning, redskaber" />
               </div>
             </div>
