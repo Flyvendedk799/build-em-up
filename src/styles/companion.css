@@ -28,6 +28,14 @@
   margin-top: 10px;
 }
 
+.companion-page-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  min-width: min(100%, 320px);
+}
+
 .companion-eyebrow {
   display: inline-flex;
   align-items: center;
@@ -2017,6 +2025,12 @@
   .companion-secondary-head,
   .companion-map-toolbar {
     display: grid;
+  }
+
+  .companion-page-actions {
+    align-items: flex-start;
+    min-width: 0;
+    width: 100%;
   }
 
   .companion-plan-tools,
