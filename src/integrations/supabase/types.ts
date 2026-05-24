@@ -294,6 +294,59 @@ export type Database = {
         }
         Relationships: []
       }
+      garden_observations: {
+        Row: {
+          ai_result: Json
+          anchor: Json
+          caption: string | null
+          confidence: number | null
+          created_at: string
+          garden_id: string | null
+          id: string
+          image_url: string | null
+          kind: string
+          plant_id: string | null
+          user_id: string
+          zone_id: string | null
+        }
+        Insert: {
+          ai_result?: Json
+          anchor?: Json
+          caption?: string | null
+          confidence?: number | null
+          created_at?: string
+          garden_id?: string | null
+          id?: string
+          image_url?: string | null
+          kind: string
+          plant_id?: string | null
+          user_id: string
+          zone_id?: string | null
+        }
+        Update: {
+          ai_result?: Json
+          anchor?: Json
+          caption?: string | null
+          confidence?: number | null
+          created_at?: string
+          garden_id?: string | null
+          id?: string
+          image_url?: string | null
+          kind?: string
+          plant_id?: string | null
+          user_id?: string
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "garden_observations_garden_id_fkey"
+            columns: ["garden_id"]
+            isOneToOne: false
+            referencedRelation: "gardens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       garden_scan_events: {
         Row: {
           created_at: string
@@ -855,42 +908,126 @@ export type Database = {
         }
         Relationships: []
       }
+      plant_growth_snapshots: {
+        Row: {
+          ai_result: Json
+          anomaly_flags: string[]
+          created_at: string
+          estimated_height_cm: number | null
+          flowering: boolean | null
+          fruiting: boolean | null
+          garden_id: string | null
+          harvest_readiness: string | null
+          id: string
+          observation_id: string | null
+          plant_id: string | null
+          stage: string | null
+          user_id: string
+          vigor: string | null
+          zone_id: string | null
+        }
+        Insert: {
+          ai_result?: Json
+          anomaly_flags?: string[]
+          created_at?: string
+          estimated_height_cm?: number | null
+          flowering?: boolean | null
+          fruiting?: boolean | null
+          garden_id?: string | null
+          harvest_readiness?: string | null
+          id?: string
+          observation_id?: string | null
+          plant_id?: string | null
+          stage?: string | null
+          user_id: string
+          vigor?: string | null
+          zone_id?: string | null
+        }
+        Update: {
+          ai_result?: Json
+          anomaly_flags?: string[]
+          created_at?: string
+          estimated_height_cm?: number | null
+          flowering?: boolean | null
+          fruiting?: boolean | null
+          garden_id?: string | null
+          harvest_readiness?: string | null
+          id?: string
+          observation_id?: string | null
+          plant_id?: string | null
+          stage?: string | null
+          user_id?: string
+          vigor?: string | null
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plant_growth_snapshots_garden_id_fkey"
+            columns: ["garden_id"]
+            isOneToOne: false
+            referencedRelation: "gardens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plant_growth_snapshots_observation_id_fkey"
+            columns: ["observation_id"]
+            isOneToOne: false
+            referencedRelation: "garden_observations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plant_health_log: {
         Row: {
+          causes: string[] | null
+          confidence: number | null
           created_at: string
           diagnosis: string | null
           id: string
           image_url: string | null
+          observation_id: string | null
           plant_id: string | null
+          prevention: string[] | null
           product_suggestions: Json | null
           raw: Json | null
           severity: string | null
+          symptoms: string[] | null
           treatment: string | null
           user_id: string
           zone_id: string | null
         }
         Insert: {
+          causes?: string[] | null
+          confidence?: number | null
           created_at?: string
           diagnosis?: string | null
           id?: string
           image_url?: string | null
+          observation_id?: string | null
           plant_id?: string | null
+          prevention?: string[] | null
           product_suggestions?: Json | null
           raw?: Json | null
           severity?: string | null
+          symptoms?: string[] | null
           treatment?: string | null
           user_id: string
           zone_id?: string | null
         }
         Update: {
+          causes?: string[] | null
+          confidence?: number | null
           created_at?: string
           diagnosis?: string | null
           id?: string
           image_url?: string | null
+          observation_id?: string | null
           plant_id?: string | null
+          prevention?: string[] | null
           product_suggestions?: Json | null
           raw?: Json | null
           severity?: string | null
+          symptoms?: string[] | null
           treatment?: string | null
           user_id?: string
           zone_id?: string | null
@@ -1183,6 +1320,7 @@ export type Database = {
       }
       task_log: {
         Row: {
+          confidence: number | null
           created_at: string
           done: boolean
           done_at: string | null
@@ -1191,12 +1329,18 @@ export type Database = {
           id: string
           kind: string
           notes: string | null
+          observation_id: string | null
+          payload: Json
           plant_id: string | null
+          priority: string | null
+          reason: string | null
+          source: string | null
           title: string
           user_id: string
           zone_id: string | null
         }
         Insert: {
+          confidence?: number | null
           created_at?: string
           done?: boolean
           done_at?: string | null
@@ -1205,12 +1349,18 @@ export type Database = {
           id?: string
           kind: string
           notes?: string | null
+          observation_id?: string | null
+          payload?: Json
           plant_id?: string | null
+          priority?: string | null
+          reason?: string | null
+          source?: string | null
           title: string
           user_id: string
           zone_id?: string | null
         }
         Update: {
+          confidence?: number | null
           created_at?: string
           done?: boolean
           done_at?: string | null
@@ -1219,7 +1369,12 @@ export type Database = {
           id?: string
           kind?: string
           notes?: string | null
+          observation_id?: string | null
+          payload?: Json
           plant_id?: string | null
+          priority?: string | null
+          reason?: string | null
+          source?: string | null
           title?: string
           user_id?: string
           zone_id?: string | null
@@ -1231,8 +1386,12 @@ export type Database = {
           created_at: string
           custom_name: string | null
           garden_id: string
+          health_status: string | null
           id: string
           image_url: string | null
+          last_observed_at: string | null
+          lifecycle_status: string | null
+          map_position: Json | null
           notes: string | null
           plant_slug: string | null
           planted_at: string | null
@@ -1244,8 +1403,12 @@ export type Database = {
           created_at?: string
           custom_name?: string | null
           garden_id: string
+          health_status?: string | null
           id?: string
           image_url?: string | null
+          last_observed_at?: string | null
+          lifecycle_status?: string | null
+          map_position?: Json | null
           notes?: string | null
           plant_slug?: string | null
           planted_at?: string | null
@@ -1257,8 +1420,12 @@ export type Database = {
           created_at?: string
           custom_name?: string | null
           garden_id?: string
+          health_status?: string | null
           id?: string
           image_url?: string | null
+          last_observed_at?: string | null
+          lifecycle_status?: string | null
+          map_position?: Json | null
           notes?: string | null
           plant_slug?: string | null
           planted_at?: string | null
