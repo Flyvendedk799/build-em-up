@@ -301,6 +301,7 @@ export default function GardenMobileScan() {
   const readyToUpload = Boolean(session && uploadPrefix && requiredFramesReady && anchorsReady);
   const selectedAnchor = anchorTargets.find((candidate) => candidate.id === selectedAnchorId) ?? null;
   const hasMapAnchorTargets = anchorTargets.some((target) => Boolean(target.mapLngLat && target.local));
+  const currentStatus = session?.status ?? "created";
   const uploadBlockedReason = !requiredFramesReady
     ? `${Math.max(0, MIN_SCAN_KEYFRAMES - frames.length)} keyframes mangler`
     : !anchorCountReady
@@ -317,6 +318,23 @@ export default function GardenMobileScan() {
         : anchorSpreadM < RECOMMENDED_ANCHOR_SPREAD_M
           ? "Klar til upload. Et ekstra anker længere væk giver bedre alignment."
           : "Klar til upload med stærkere alignment-grundlag.";
+  const selectedAnchorIndex = selectedAnchor ? anchorTargets.findIndex((target) => target.id === selectedAnchor.id) : -1;
+  const captureGuide = state === "ready"
+    ? "Start kameraet, vælg et kortanker og peg på samme punkt i haven."
+    : !anchorCountReady
+      ? "Tryk på det valgte punkt i kamerabilledet. Brug tydelige hjørner."
+      : !requiredFramesReady
+        ? "Gå langsomt videre, så kameraet samler flere vinkler automatisk."
+        : !anchorSpreadReady
+          ? "Vælg et anker længere væk, så modellen ikke drejer forkert."
+          : "Scan er klar til upload.";
+  const footerHint = state === "uploaded"
+    ? "Vi bygger 3D-modellen og viser den på haven, når den er klar."
+    : state === "camera"
+      ? readinessHint
+      : state === "ready"
+        ? "Start kameraet, marker 2-4 kortankre og upload scanningen."
+        : scanActionHint(currentStatus);
 
   useEffect(() => {
     document.body.classList.add("is-mobile-scan");
@@ -539,8 +557,33 @@ export default function GardenMobileScan() {
     await markAnchor(selectedAnchor, imagePointFromEvent(event));
   }
 
+  function explainUploadBlock() {
+    if (!session || !uploadPrefix) {
+      toast.error("Scan-sessionen er ikke klar endnu");
+      return;
+    }
+    toast("Scan mangler stadig lidt", {
+      description: uploadBlockedReason ? `${uploadBlockedReason}. ${readinessHint}` : readinessHint,
+    });
+  }
+
+  async function handleUploadAction() {
+    if (!readyToUpload) {
+      explainUploadBlock();
+      return;
+    }
+    await uploadCapture();
+  }
+
   async function uploadCapture() {
-    if (!session || !uploadPrefix || !readyToUpload) return;
+    if (!session || !uploadPrefix) {
+      toast.error("Scan-sessionen er ikke klar endnu");
+      return;
+    }
+    if (!readyToUpload) {
+      explainUploadBlock();
+      return;
+    }
     setState("uploading");
     const targets = buildUploadTargets(uploadPrefix);
     const byKind = Object.fromEntries(targets.map((target) => [target.kind, target.path])) as Record<string, string>;
@@ -671,8 +714,6 @@ export default function GardenMobileScan() {
     if (error) throw error;
   }
 
-  const currentStatus = session?.status ?? "created";
-
   return (
     <div className="mobile-scan-page">
       <AppNav active="sizer" />
@@ -686,6 +727,15 @@ export default function GardenMobileScan() {
           <small>{scanStatusLabel(currentStatus)} · {scanProgress(currentStatus)}%</small>
         </header>
 
+        {state !== "loading" && state !== "error" && state !== "uploaded" && (
+          <div className="mobile-scan-flow" aria-label="Scantrin">
+            <span className={state === "ready" ? "is-active" : "is-done"}><b>1</b>Kamera</span>
+            <span className={anchorCountReady ? "is-done" : state === "camera" ? "is-active" : ""}><b>2</b>Ankre</span>
+            <span className={requiredFramesReady ? "is-done" : state === "camera" && anchorCountReady ? "is-active" : ""}><b>3</b>Vinkler</span>
+            <span className={readyToUpload ? "is-active" : ""}><b>4</b>Upload</span>
+          </div>
+        )}
+
         {state !== "uploaded" && (
           <MobileAnchorMap
             frame={mapFrame}
@@ -694,6 +744,13 @@ export default function GardenMobileScan() {
             anchors={anchors}
             onSelect={setSelectedAnchorId}
           />
+        )}
+
+        {state !== "loading" && state !== "error" && state !== "uploaded" && (
+          <div className="mobile-scan-guide">
+            <strong>{state === "ready" ? "Klar til kamera" : selectedAnchor ? `Næste anker: ${selectedAnchor.label}` : "Vælg et anker"}</strong>
+            <span>{captureGuide}</span>
+          </div>
         )}
 
         <div className={`mobile-scan-camera ${state === "camera" ? "is-marking" : ""}`} onPointerDown={(event) => { void handleCameraTap(event); }}>
@@ -713,7 +770,7 @@ export default function GardenMobileScan() {
           </div>
           {state === "camera" && selectedAnchor && (
             <div className="mobile-scan-target-hint">
-              Tryk {anchorTargets.findIndex((target) => target.id === selectedAnchor.id) + 1}: {selectedAnchor.label}
+              Tryk samme punkt i kameraet: {selectedAnchorIndex + 1}. {selectedAnchor.label}
             </div>
           )}
         </div>
@@ -733,11 +790,11 @@ export default function GardenMobileScan() {
           )}
           {state === "camera" && (
             <>
-              <button type="button" className="btn btn-primary" onClick={() => void captureFrame()}>
-                <Camera size={16} /> Ekstra keyframe
+              <button type="button" className={readyToUpload ? "btn btn-primary" : "btn btn-ghost"} onClick={() => void handleUploadAction()}>
+                <UploadCloud size={16} /> {readyToUpload ? "Upload scan" : uploadBlockedReason || "Tjek scan"}
               </button>
-              <button type="button" className="btn btn-ghost" onClick={uploadCapture} disabled={!readyToUpload}>
-                <UploadCloud size={16} /> {readyToUpload ? "Upload scan" : uploadBlockedReason}
+              <button type="button" className="btn btn-ghost" onClick={() => void captureFrame()}>
+                <Camera size={16} /> Ekstra keyframe
               </button>
             </>
           )}
@@ -756,6 +813,11 @@ export default function GardenMobileScan() {
         {state === "camera" && (
           <div className="mobile-scan-anchors">
             <p>{readinessHint}</p>
+            <div className="mobile-scan-readiness" aria-live="polite">
+              <span className={requiredFramesReady ? "is-done" : ""}><CheckCircle2 size={14} /> {Math.min(frames.length, MIN_SCAN_KEYFRAMES)}/{MIN_SCAN_KEYFRAMES} billeder</span>
+              <span className={anchorCountReady ? "is-done" : ""}><CircleDot size={14} /> {alignedAnchorCount}/{MIN_ALIGNED_ANCHORS} ankre</span>
+              <span className={anchorSpreadReady ? "is-done" : ""}><Compass size={14} /> {Math.round(anchorSpreadM)}m afstand</span>
+            </div>
             {anchorTargets.map((target, index) => (
               <button
                 type="button"
@@ -777,8 +839,8 @@ export default function GardenMobileScan() {
         </div>
 
         <footer className="mobile-scan-footer">
-          <span>{scanActionHint(currentStatus)}</span>
-          <small>{uploadTargets.filter((target) => target.required).length} krævede filer · {frames.length} keyframes · {alignedAnchorCount} kortankre · {Math.round(anchorSpreadM)}m ankerafstand · {uploadPrefix || "afventer session"}</small>
+          <span>{footerHint}</span>
+          <small>{frames.length}/{RECOMMENDED_SCAN_KEYFRAMES} billeder · {alignedAnchorCount}/{RECOMMENDED_ALIGNED_ANCHORS} ankre · {Math.round(anchorSpreadM)}m ankerafstand</small>
         </footer>
       </section>
     </div>

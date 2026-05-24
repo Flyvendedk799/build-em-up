@@ -293,6 +293,14 @@
   background: var(--gold-600);
   color: var(--forest-900);
 }
+.canvas-host .tool-btn.scan-primary {
+  background: var(--gold-600);
+  color: var(--forest-900);
+  font-weight: 800;
+}
+.canvas-host .mobile-scan-tool {
+  display: none;
+}
 .map-secondary-actions .tool-btn {
   display: inline-flex;
   align-items: center;
@@ -310,6 +318,17 @@
 .map-secondary-actions .tool-btn:hover {
   border-color: rgba(20,39,29,0.34);
   background: rgba(20,39,29,0.04);
+}
+.map-secondary-actions .tool-btn.scan-primary {
+  border-color: rgba(20,39,29,0.72);
+  background: var(--forest-900);
+  color: var(--mist-25);
+  font-weight: 800;
+  box-shadow: var(--sh-1);
+}
+.map-secondary-actions .tool-btn.scan-primary:hover {
+  background: var(--forest-800);
+  color: var(--mist-25);
 }
 .map-secondary-actions .tool-btn:disabled {
   opacity: .45;
@@ -609,6 +628,12 @@
   opacity: .45;
   cursor: not-allowed;
 }
+.garden-scan-panel__actions .garden-scan-panel__scan-action {
+  border-color: rgba(20,39,29,0.72);
+  background: var(--forest-900);
+  color: var(--mist-25);
+  font-weight: 800;
+}
 .garden-scan-launch,
 .garden-scan-status {
   padding: 11px;
@@ -722,6 +747,55 @@
   font-size: 11px;
   white-space: nowrap;
 }
+.mobile-scan-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.mobile-scan-flow span {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(20,39,29,0.08);
+  background: rgba(255,255,255,0.58);
+  color: var(--ink-500);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.mobile-scan-flow b {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20,39,29,0.08);
+  color: var(--forest-900);
+  font-size: 10px;
+}
+.mobile-scan-flow span.is-active {
+  border-color: rgba(216,166,81,0.72);
+  background: rgba(255,247,225,0.94);
+  color: var(--forest-900);
+}
+.mobile-scan-flow span.is-active b {
+  background: var(--gold-600);
+}
+.mobile-scan-flow span.is-done {
+  border-color: rgba(79,138,84,0.34);
+  background: rgba(79,138,84,0.13);
+  color: var(--forest-900);
+}
+.mobile-scan-flow span.is-done b {
+  background: #4f8a54;
+  color: #ffffff;
+}
 .mobile-scan-back {
   width: 40px;
   height: 40px;
@@ -807,6 +881,23 @@
 }
 .mobile-scan-map__anchor.is-done text {
   fill: #ffffff;
+}
+.mobile-scan-guide {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.62);
+  border: 1px solid rgba(20,39,29,0.08);
+  color: var(--forest-900);
+}
+.mobile-scan-guide strong {
+  font-size: 13px;
+}
+.mobile-scan-guide span {
+  color: var(--ink-500);
+  font-size: 12px;
+  line-height: 1.35;
 }
 .mobile-scan-camera {
   position: relative;
@@ -920,6 +1011,32 @@
   color: var(--ink-500);
   font-size: 12px;
   line-height: 1.35;
+}
+.mobile-scan-readiness {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.mobile-scan-readiness span {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.66);
+  border: 1px solid rgba(20,39,29,0.08);
+  color: var(--ink-500);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.mobile-scan-readiness span.is-done {
+  border-color: rgba(79,138,84,0.32);
+  background: rgba(79,138,84,0.14);
+  color: var(--forest-900);
 }
 .mobile-scan-anchors button {
   min-height: 40px;

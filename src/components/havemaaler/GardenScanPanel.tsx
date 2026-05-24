@@ -78,7 +78,7 @@ export default function GardenScanPanel({
         <button type="button" onClick={onBuildPreview} disabled={!canPreview}>
           <Layers3 size={14} /> Flad preview
         </button>
-        <button type="button" onClick={onStartScan} disabled={!canStartScan || starting}>
+        <button type="button" className="garden-scan-panel__scan-action" onClick={onStartScan} disabled={!canStartScan || starting}>
           {starting ? <UploadCloud size={14} /> : <Play size={14} />} {starting ? "Klargør..." : resolvedScanButtonLabel}
         </button>
         <button type="button" onClick={onShowTwin} disabled={!depthModel}>
