@@ -76,6 +76,41 @@ function objectOrEmpty(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function isLngLat(value: unknown) {
+  return Array.isArray(value)
+    && value.length >= 2
+    && typeof value[0] === "number"
+    && typeof value[1] === "number"
+    && Number.isFinite(value[0])
+    && Number.isFinite(value[1]);
+}
+
+function isImagePoint(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const point = value as Record<string, unknown>;
+  return typeof point.x === "number"
+    && typeof point.y === "number"
+    && point.x >= 0
+    && point.x <= 1
+    && point.y >= 0
+    && point.y <= 1;
+}
+
+function isArLocal(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const point = value as Record<string, unknown>;
+  return typeof point.x === "number" && typeof point.y === "number" && typeof point.z === "number";
+}
+
+function countAlignableAnchors(value: unknown) {
+  if (!Array.isArray(value)) return 0;
+  return value.filter((anchor) => {
+    if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) return false;
+    const row = anchor as Record<string, unknown>;
+    return isLngLat(row.mapLngLat) && (isImagePoint(row.imagePoint) || isArLocal(row.arLocal));
+  }).length;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -100,7 +135,7 @@ Deno.serve(async (req) => {
 
     const { data: session, error: sessionError } = await sb
       .from("garden_scan_sessions")
-      .select("id,garden_id,user_id,status,manifest_path,status_history,processing_attempts,capture_metadata")
+      .select("id,garden_id,user_id,status,manifest_path,status_history,processing_attempts,capture_metadata,anchors")
       .eq("id", sessionId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -122,6 +157,17 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
     if (status === "uploaded" && !body.manifest_path && !session.manifest_path) {
       return json({ error: "manifest_path required for uploaded scans" }, 400);
+    }
+    if (status === "uploaded") {
+      const uploadAnchors = Array.isArray(body.anchors) ? body.anchors : session.anchors;
+      const alignableAnchorCount = countAlignableAnchors(uploadAnchors);
+      if (alignableAnchorCount < 2) {
+        return json({
+          error: "too_few_aligned_anchors",
+          message: "Uploaded scans require at least 2 anchors with both mapLngLat and camera imagePoint or arLocal evidence.",
+          alignable_anchor_count: alignableAnchorCount,
+        }, 400);
+      }
     }
     if (status === "ready") {
       const issues = depthModelIssues(resultJson);

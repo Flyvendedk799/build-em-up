@@ -45,13 +45,16 @@ Optional:
 - `capture.webm`: browser video where supported.
 - `frames/*.jpg`: individual uploaded keyframes referenced by `keyframes.json`.
 
-Mobile capture should include 2-4 anchors that are visible in both satellite and real-world capture. Each anchor should include map lng/lat when known, capture-local evidence when known, label, confidence, and evidence frame IDs.
+Mobile capture should include 2-4 anchors that are visible in both satellite and real-world capture. Each anchor should include map lng/lat, camera image point or AR-local evidence, label, confidence, and evidence frame IDs. Anchors without both a map point and a camera/capture point are stored as weak evidence but do not count toward alignment readiness.
+
+The browser capture flow should automatically collect keyframes while the camera is open. Manual keyframe buttons are only for extra coverage. V1 gates use 8 keyframes as the minimum upload threshold and 18 keyframes as the recommended threshold for stronger reconstruction.
 
 Minimum manifest quality gates:
 
 - `version = 1`
 - `session_id` and `garden_id` match the session
-- at least 2 anchors, 4 recommended
+- at least 2 alignable anchors, 4 recommended
+- at least 8 keyframes, 18 recommended
 - `tracking.json` and `keyframes.json` are present
 - capture duration is ideally 45-90 seconds
 - browser motion/tracking should be `normal` for strong reconstruction
