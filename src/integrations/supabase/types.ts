@@ -210,42 +210,36 @@ export type Database = {
       }
       devices: {
         Row: {
-          autopilot_enabled: boolean
           battery: number | null
           created_at: string
           garden_id: string | null
           id: string
           kind: Database["public"]["Enums"]["device_kind"]
           last_seen: string | null
-          map_position: Json
           metadata: Json | null
           name: string
           status: string
           user_id: string
         }
         Insert: {
-          autopilot_enabled?: boolean
           battery?: number | null
           created_at?: string
           garden_id?: string | null
           id?: string
           kind: Database["public"]["Enums"]["device_kind"]
           last_seen?: string | null
-          map_position?: Json
           metadata?: Json | null
           name: string
           status?: string
           user_id: string
         }
         Update: {
-          autopilot_enabled?: boolean
           battery?: number | null
           created_at?: string
           garden_id?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["device_kind"]
           last_seen?: string | null
-          map_position?: Json
           metadata?: Json | null
           name?: string
           status?: string
@@ -260,96 +254,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      device_actions: {
-        Row: {
-          action: string
-          approved_at: string | null
-          created_at: string
-          device_id: string | null
-          executed_at: string | null
-          garden_id: string | null
-          id: string
-          payload: Json
-          reason: string | null
-          requested_by: string
-          status: string
-          user_id: string
-          zone_id: string | null
-        }
-        Insert: {
-          action: string
-          approved_at?: string | null
-          created_at?: string
-          device_id?: string | null
-          executed_at?: string | null
-          garden_id?: string | null
-          id?: string
-          payload?: Json
-          reason?: string | null
-          requested_by?: string
-          status?: string
-          user_id: string
-          zone_id?: string | null
-        }
-        Update: {
-          action?: string
-          approved_at?: string | null
-          created_at?: string
-          device_id?: string | null
-          executed_at?: string | null
-          garden_id?: string | null
-          id?: string
-          payload?: Json
-          reason?: string | null
-          requested_by?: string
-          status?: string
-          user_id?: string
-          zone_id?: string | null
-        }
-        Relationships: []
-      }
-      device_readings: {
-        Row: {
-          created_at: string
-          data: Json
-          device_id: string | null
-          garden_id: string | null
-          id: string
-          kind: string
-          observed_at: string
-          unit: string | null
-          user_id: string
-          value: number | null
-          zone_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          data?: Json
-          device_id?: string | null
-          garden_id?: string | null
-          id?: string
-          kind: string
-          observed_at?: string
-          unit?: string | null
-          user_id: string
-          value?: number | null
-          zone_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          data?: Json
-          device_id?: string | null
-          garden_id?: string | null
-          id?: string
-          kind?: string
-          observed_at?: string
-          unit?: string | null
-          user_id?: string
-          value?: number | null
-          zone_id?: string | null
-        }
-        Relationships: []
       }
       garden_journal: {
         Row: {
@@ -390,86 +294,16 @@ export type Database = {
         }
         Relationships: []
       }
-      garden_observations: {
-        Row: {
-          ai_result: Json
-          anchor: Json
-          caption: string | null
-          confidence: number | null
-          created_at: string
-          garden_id: string
-          id: string
-          image_url: string | null
-          kind: string
-          plant_id: string | null
-          user_id: string
-          zone_id: string | null
-        }
-        Insert: {
-          ai_result?: Json
-          anchor?: Json
-          caption?: string | null
-          confidence?: number | null
-          created_at?: string
-          garden_id: string
-          id?: string
-          image_url?: string | null
-          kind: string
-          plant_id?: string | null
-          user_id: string
-          zone_id?: string | null
-        }
-        Update: {
-          ai_result?: Json
-          anchor?: Json
-          caption?: string | null
-          confidence?: number | null
-          created_at?: string
-          garden_id?: string
-          id?: string
-          image_url?: string | null
-          kind?: string
-          plant_id?: string | null
-          user_id?: string
-          zone_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "garden_observations_garden_id_fkey"
-            columns: ["garden_id"]
-            isOneToOne: false
-            referencedRelation: "gardens"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "garden_observations_plant_id_fkey"
-            columns: ["plant_id"]
-            isOneToOne: false
-            referencedRelation: "user_plants"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "garden_observations_zone_id_fkey"
-            columns: ["zone_id"]
-            isOneToOne: false
-            referencedRelation: "garden_zones"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       garden_zones: {
         Row: {
           area_m2: number | null
           created_at: string
-          crop_family: string | null
           garden_id: string
           id: string
-          irrigation_method: string | null
           microclimate: Json | null
           mulch: boolean | null
           name: string
           polygon: Json | null
-          purpose: string | null
           shade_pct: number | null
           slope: string | null
           soil: string | null
@@ -481,15 +315,12 @@ export type Database = {
         Insert: {
           area_m2?: number | null
           created_at?: string
-          crop_family?: string | null
           garden_id: string
           id?: string
-          irrigation_method?: string | null
           microclimate?: Json | null
           mulch?: boolean | null
           name: string
           polygon?: Json | null
-          purpose?: string | null
           shade_pct?: number | null
           slope?: string | null
           soil?: string | null
@@ -501,15 +332,12 @@ export type Database = {
         Update: {
           area_m2?: number | null
           created_at?: string
-          crop_family?: string | null
           garden_id?: string
           id?: string
-          irrigation_method?: string | null
           microclimate?: Json | null
           mulch?: boolean | null
           name?: string
           polygon?: Json | null
-          purpose?: string | null
           shade_pct?: number | null
           slope?: string | null
           soil?: string | null
@@ -533,8 +361,6 @@ export type Database = {
           address: string | null
           area_m2: number | null
           created_at: string
-          depth_model: Json | null
-          depth_model_updated_at: string | null
           exclusions: Json | null
           id: string
           imagery_source: string | null
@@ -542,7 +368,6 @@ export type Database = {
           longitude: number | null
           name: string
           polygon: Json | null
-          preferences: Json
           thumbnail_url: string | null
           updated_at: string
           user_id: string
@@ -551,8 +376,6 @@ export type Database = {
           address?: string | null
           area_m2?: number | null
           created_at?: string
-          depth_model?: Json | null
-          depth_model_updated_at?: string | null
           exclusions?: Json | null
           id?: string
           imagery_source?: string | null
@@ -560,7 +383,6 @@ export type Database = {
           longitude?: number | null
           name?: string
           polygon?: Json | null
-          preferences?: Json
           thumbnail_url?: string | null
           updated_at?: string
           user_id: string
@@ -569,8 +391,6 @@ export type Database = {
           address?: string | null
           area_m2?: number | null
           created_at?: string
-          depth_model?: Json | null
-          depth_model_updated_at?: string | null
           exclusions?: Json | null
           id?: string
           imagery_source?: string | null
@@ -578,190 +398,7 @@ export type Database = {
           longitude?: number | null
           name?: string
           polygon?: Json | null
-          preferences?: Json
           thumbnail_url?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      garden_scan_sessions: {
-        Row: {
-          anchors: Json
-          capture_client_version: string | null
-          capture_metadata: Json
-          claimed_by: string | null
-          confidence: number | null
-          created_at: string
-          device_capabilities: Json
-          device_model: string | null
-          error_code: string | null
-          error_detail: string | null
-          garden_id: string
-          id: string
-          last_status_at: string
-          manifest_path: string | null
-          media_retention_until: string
-          pipeline_version: string
-          processing_attempts: number
-          processing_finished_at: string | null
-          processing_started_at: string | null
-          result_json: Json | null
-          status: string
-          status_history: Json
-          updated_at: string
-          upload_prefix: string | null
-          user_id: string
-          warnings: string[]
-        }
-        Insert: {
-          anchors?: Json
-          capture_client_version?: string | null
-          capture_metadata?: Json
-          claimed_by?: string | null
-          confidence?: number | null
-          created_at?: string
-          device_capabilities?: Json
-          device_model?: string | null
-          error_code?: string | null
-          error_detail?: string | null
-          garden_id: string
-          id?: string
-          last_status_at?: string
-          manifest_path?: string | null
-          media_retention_until?: string
-          pipeline_version?: string
-          processing_attempts?: number
-          processing_finished_at?: string | null
-          processing_started_at?: string | null
-          result_json?: Json | null
-          status?: string
-          status_history?: Json
-          updated_at?: string
-          upload_prefix?: string | null
-          user_id: string
-          warnings?: string[]
-        }
-        Update: {
-          anchors?: Json
-          capture_client_version?: string | null
-          capture_metadata?: Json
-          claimed_by?: string | null
-          confidence?: number | null
-          created_at?: string
-          device_capabilities?: Json
-          device_model?: string | null
-          error_code?: string | null
-          error_detail?: string | null
-          garden_id?: string
-          id?: string
-          last_status_at?: string
-          manifest_path?: string | null
-          media_retention_until?: string
-          pipeline_version?: string
-          processing_attempts?: number
-          processing_finished_at?: string | null
-          processing_started_at?: string | null
-          result_json?: Json | null
-          status?: string
-          status_history?: Json
-          updated_at?: string
-          upload_prefix?: string | null
-          user_id?: string
-          warnings?: string[]
-        }
-        Relationships: [
-          {
-            foreignKeyName: "garden_scan_sessions_garden_id_fkey"
-            columns: ["garden_id"]
-            isOneToOne: false
-            referencedRelation: "gardens"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      garden_scan_events: {
-        Row: {
-          created_at: string
-          event_type: string
-          garden_id: string
-          id: string
-          payload: Json
-          session_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          event_type: string
-          garden_id: string
-          id?: string
-          payload?: Json
-          session_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          event_type?: string
-          garden_id?: string
-          id?: string
-          payload?: Json
-          session_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "garden_scan_events_garden_id_fkey"
-            columns: ["garden_id"]
-            isOneToOne: false
-            referencedRelation: "gardens"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "garden_scan_events_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "garden_scan_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      integration_connections: {
-        Row: {
-          created_at: string
-          display_name: string | null
-          garden_id: string | null
-          id: string
-          kind: string
-          last_sync_at: string | null
-          provider: string
-          settings: Json
-          status: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          display_name?: string | null
-          garden_id?: string | null
-          id?: string
-          kind: string
-          last_sync_at?: string | null
-          provider: string
-          settings?: Json
-          status?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          display_name?: string | null
-          garden_id?: string | null
-          id?: string
-          kind?: string
-          last_sync_at?: string | null
-          provider?: string
-          settings?: Json
-          status?: string
           updated_at?: string
           user_id?: string
         }
@@ -1071,114 +708,42 @@ export type Database = {
       }
       plant_health_log: {
         Row: {
-          causes: string[]
-          confidence: number | null
           created_at: string
           diagnosis: string | null
-          garden_id: string | null
           id: string
           image_url: string | null
-          observation_id: string | null
           plant_id: string | null
-          prevention: string | null
           product_suggestions: Json | null
           raw: Json | null
           severity: string | null
-          symptoms: string[]
           treatment: string | null
           user_id: string
           zone_id: string | null
         }
         Insert: {
-          causes?: string[]
-          confidence?: number | null
           created_at?: string
           diagnosis?: string | null
-          garden_id?: string | null
           id?: string
           image_url?: string | null
-          observation_id?: string | null
           plant_id?: string | null
-          prevention?: string | null
           product_suggestions?: Json | null
           raw?: Json | null
           severity?: string | null
-          symptoms?: string[]
           treatment?: string | null
           user_id: string
           zone_id?: string | null
         }
         Update: {
-          causes?: string[]
-          confidence?: number | null
           created_at?: string
           diagnosis?: string | null
-          garden_id?: string | null
           id?: string
           image_url?: string | null
-          observation_id?: string | null
           plant_id?: string | null
-          prevention?: string | null
           product_suggestions?: Json | null
           raw?: Json | null
           severity?: string | null
-          symptoms?: string[]
           treatment?: string | null
           user_id?: string
-          zone_id?: string | null
-        }
-        Relationships: []
-      }
-      plant_growth_snapshots: {
-        Row: {
-          ai_result: Json
-          anomaly_flags: string[]
-          created_at: string
-          estimated_height_cm: number | null
-          flowering: boolean | null
-          fruiting: boolean | null
-          garden_id: string
-          harvest_readiness: string | null
-          id: string
-          observation_id: string | null
-          plant_id: string | null
-          stage: string | null
-          user_id: string
-          vigor: string | null
-          zone_id: string | null
-        }
-        Insert: {
-          ai_result?: Json
-          anomaly_flags?: string[]
-          created_at?: string
-          estimated_height_cm?: number | null
-          flowering?: boolean | null
-          fruiting?: boolean | null
-          garden_id: string
-          harvest_readiness?: string | null
-          id?: string
-          observation_id?: string | null
-          plant_id?: string | null
-          stage?: string | null
-          user_id: string
-          vigor?: string | null
-          zone_id?: string | null
-        }
-        Update: {
-          ai_result?: Json
-          anomaly_flags?: string[]
-          created_at?: string
-          estimated_height_cm?: number | null
-          flowering?: boolean | null
-          fruiting?: boolean | null
-          garden_id?: string
-          harvest_readiness?: string | null
-          id?: string
-          observation_id?: string | null
-          plant_id?: string | null
-          stage?: string | null
-          user_id?: string
-          vigor?: string | null
           zone_id?: string | null
         }
         Relationships: []
@@ -1469,7 +1034,6 @@ export type Database = {
       }
       task_log: {
         Row: {
-          confidence: number | null
           created_at: string
           done: boolean
           done_at: string | null
@@ -1478,19 +1042,12 @@ export type Database = {
           id: string
           kind: string
           notes: string | null
-          observation_id: string | null
-          payload: Json
           plant_id: string | null
-          priority: string
-          reason: string | null
-          snoozed_until: string | null
-          source: string
           title: string
           user_id: string
           zone_id: string | null
         }
         Insert: {
-          confidence?: number | null
           created_at?: string
           done?: boolean
           done_at?: string | null
@@ -1499,19 +1056,12 @@ export type Database = {
           id?: string
           kind: string
           notes?: string | null
-          observation_id?: string | null
-          payload?: Json
           plant_id?: string | null
-          priority?: string
-          reason?: string | null
-          snoozed_until?: string | null
-          source?: string
           title: string
           user_id: string
           zone_id?: string | null
         }
         Update: {
-          confidence?: number | null
           created_at?: string
           done?: boolean
           done_at?: string | null
@@ -1520,13 +1070,7 @@ export type Database = {
           id?: string
           kind?: string
           notes?: string | null
-          observation_id?: string | null
-          payload?: Json
           plant_id?: string | null
-          priority?: string
-          reason?: string | null
-          snoozed_until?: string | null
-          source?: string
           title?: string
           user_id?: string
           zone_id?: string | null
@@ -1538,54 +1082,39 @@ export type Database = {
           created_at: string
           custom_name: string | null
           garden_id: string
-          health_status: string | null
           id: string
           image_url: string | null
-          last_observed_at: string | null
-          lifecycle_status: string | null
-          map_position: Json
           notes: string | null
           plant_slug: string | null
           planted_at: string | null
           qty: number
           user_id: string
-          variety: string | null
           zone_id: string | null
         }
         Insert: {
           created_at?: string
           custom_name?: string | null
           garden_id: string
-          health_status?: string | null
           id?: string
           image_url?: string | null
-          last_observed_at?: string | null
-          lifecycle_status?: string | null
-          map_position?: Json
           notes?: string | null
           plant_slug?: string | null
           planted_at?: string | null
           qty?: number
           user_id: string
-          variety?: string | null
           zone_id?: string | null
         }
         Update: {
           created_at?: string
           custom_name?: string | null
           garden_id?: string
-          health_status?: string | null
           id?: string
           image_url?: string | null
-          last_observed_at?: string | null
-          lifecycle_status?: string | null
-          map_position?: Json
           notes?: string | null
           plant_slug?: string | null
           planted_at?: string | null
           qty?: number
           user_id?: string
-          variety?: string | null
           zone_id?: string | null
         }
         Relationships: [
