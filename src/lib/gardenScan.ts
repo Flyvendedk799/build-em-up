@@ -54,6 +54,10 @@ export type GardenScanManifest = {
     tracking_quality: "normal" | "limited" | "not_available";
     frame_count?: number | null;
     keyframe_count?: number | null;
+    automatic_keyframes?: boolean | null;
+    frame_interval_seconds?: number | null;
+    anchor_count?: number | null;
+    aligned_anchor_count?: number | null;
     coverage_score?: number | null;
     low_light?: boolean | null;
   };
@@ -72,6 +76,11 @@ export type PipelineIssue = {
   code: string;
   message: string;
 };
+
+export const MIN_SCAN_KEYFRAMES = 8;
+export const RECOMMENDED_SCAN_KEYFRAMES = 18;
+export const MIN_ALIGNED_ANCHORS = 2;
+export const RECOMMENDED_ALIGNED_ANCHORS = 4;
 
 export const SCAN_UPLOAD_TARGETS: Array<Omit<ScanUploadTarget, "path" | "signedUrl" | "token"> & { fileName: string }> = [
   { kind: "manifest", fileName: "manifest.json", contentType: "application/json", required: true },
@@ -154,12 +163,12 @@ export function scanCanStartNewSession(sessions: GardenScanSession[]) {
 }
 
 export function requiredAnchorCount(status: string, anchors: unknown) {
-  const count = Array.isArray(anchors) ? anchors.length : 0;
+  const count = countAlignableAnchors(anchors);
   return {
     count,
-    recommended: 4,
-    minimum: 2,
-    ready: count >= 2 || status === "created",
+    recommended: RECOMMENDED_ALIGNED_ANCHORS,
+    minimum: MIN_ALIGNED_ANCHORS,
+    ready: count >= MIN_ALIGNED_ANCHORS || status === "created",
   };
 }
 
@@ -191,6 +200,42 @@ export function normalizeScanWarnings(value: unknown) {
   return value.map(String).map((warning) => warning.trim()).filter(Boolean).slice(0, 24);
 }
 
+function isLngLat(value: unknown): value is [number, number] {
+  return Array.isArray(value)
+    && value.length >= 2
+    && typeof value[0] === "number"
+    && typeof value[1] === "number"
+    && Number.isFinite(value[0])
+    && Number.isFinite(value[1]);
+}
+
+function isImagePoint(value: unknown): value is { x: number; y: number } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const point = value as Record<string, unknown>;
+  return typeof point.x === "number"
+    && typeof point.y === "number"
+    && point.x >= 0
+    && point.x <= 1
+    && point.y >= 0
+    && point.y <= 1;
+}
+
+function isArLocal(value: unknown): value is { x: number; y: number; z: number } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const point = value as Record<string, unknown>;
+  return typeof point.x === "number" && typeof point.y === "number" && typeof point.z === "number";
+}
+
+export function isAlignableScanAnchor(value: unknown): value is GardenScanAnchorObservation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const anchor = value as GardenScanAnchorObservation;
+  return isLngLat(anchor.mapLngLat) && (isImagePoint(anchor.imagePoint) || isArLocal(anchor.arLocal));
+}
+
+export function countAlignableAnchors(value: unknown) {
+  return Array.isArray(value) ? value.filter(isAlignableScanAnchor).length : 0;
+}
+
 export function inspectScanManifest(value: unknown): { manifest: GardenScanManifest | null; issues: PipelineIssue[]; ready: boolean } {
   const issues: PipelineIssue[] = [];
   if (!value || typeof value !== "object") {
@@ -215,16 +260,23 @@ export function inspectScanManifest(value: unknown): { manifest: GardenScanManif
     if (row.capture.tracking_quality !== "normal") {
       issues.push({ severity: "warning", code: "limited_tracking", message: "Browserens motion/tracking er begrænset gennem scanningen." });
     }
-    if (typeof row.capture.keyframe_count === "number" && row.capture.keyframe_count < 18) {
+    if (typeof row.capture.keyframe_count !== "number") {
+      issues.push({ severity: "error", code: "missing_keyframe_count", message: "Manifestet skal angive antal keyframes." });
+    } else if (row.capture.keyframe_count < MIN_SCAN_KEYFRAMES) {
+      issues.push({ severity: "error", code: "too_few_keyframes", message: `Mindst ${MIN_SCAN_KEYFRAMES} keyframes er nødvendige for mobilscan.` });
+    } else if (row.capture.keyframe_count < RECOMMENDED_SCAN_KEYFRAMES) {
       issues.push({ severity: "warning", code: "few_keyframes", message: "For få keyframes kan give svag rekonstruktion." });
     }
     if (row.capture.low_light) {
       issues.push({ severity: "warning", code: "low_light", message: "Lavt lys reducerer objekt- og dybdekvalitet." });
     }
   }
-  if (!Array.isArray(row.anchors) || row.anchors.length < 2) {
+  const alignableAnchorCount = countAlignableAnchors(row.anchors);
+  if (!Array.isArray(row.anchors) || row.anchors.length < MIN_ALIGNED_ANCHORS) {
     issues.push({ severity: "error", code: "too_few_anchors", message: "Mindst 2 ankre er nødvendige for alignment." });
-  } else if (row.anchors.length < 4) {
+  } else if (alignableAnchorCount < MIN_ALIGNED_ANCHORS) {
+    issues.push({ severity: "error", code: "too_few_aligned_anchors", message: "Mindst 2 ankre skal have både kortpunkt og kamerapunkt." });
+  } else if (alignableAnchorCount < RECOMMENDED_ALIGNED_ANCHORS) {
     issues.push({ severity: "warning", code: "less_than_recommended_anchors", message: "4 ankre anbefales for stærkere alignment." });
   }
   if (!row.files?.tracking) issues.push({ severity: "error", code: "missing_tracking_file", message: "tracking.json mangler." });
