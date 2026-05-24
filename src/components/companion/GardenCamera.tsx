@@ -190,7 +190,7 @@ export default function GardenCamera({ userId, garden, zones, plants, observatio
         data = (res.data ?? null) as ScanResult | null;
       }
 
-      if (data?.error) throw new Error(data.error);
+      if (data?.error) throw new Error(String(data.error));
       setResult(data || { summary: mode === "photo" ? "Foto klar til kortet" : "Observation klar" });
     } catch (e: unknown) {
       toast.error(errorMessage(e, "AI kunne ikke analysere billedet"));
