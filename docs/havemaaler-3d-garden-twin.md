@@ -54,8 +54,10 @@ Minimum manifest quality gates:
 - `version = 1`
 - `session_id` and `garden_id` match the session
 - at least 2 alignable anchors, 4 recommended
+- alignable anchors should be separated by at least 3 meters on the map; 8+ meters is preferred
 - at least 8 keyframes, 18 recommended
 - `tracking.json` and `keyframes.json` are present
+- uploaded manifest paths must stay inside the session upload prefix
 - capture duration is ideally 45-90 seconds
 - browser motion/tracking should be `normal` for strong reconstruction
 - low light, few keyframes, weak anchors, or limited tracking must be warnings, not silent failures

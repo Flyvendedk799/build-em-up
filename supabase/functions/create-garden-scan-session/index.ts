@@ -180,6 +180,8 @@ Deno.serve(async (req) => {
         quality_gates: {
           minimum_anchors: 2,
           recommended_anchors: 4,
+          minimum_anchor_spread_m: 3,
+          recommended_anchor_spread_m: 8,
           minimum_keyframes: 8,
           recommended_keyframes: 18,
           recommended_capture_seconds: [45, 90],

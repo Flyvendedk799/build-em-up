@@ -9,11 +9,14 @@ import { useAuth } from "@/lib/auth";
 import type { LngLat, LocalPoint } from "@/lib/gardenDepth";
 import {
   buildUploadTargets,
+  anchorSpreadMeters,
   countAlignableAnchors,
   inspectScanManifest,
   MIN_ALIGNED_ANCHORS,
+  MIN_ANCHOR_SPREAD_M,
   MIN_SCAN_KEYFRAMES,
   RECOMMENDED_ALIGNED_ANCHORS,
+  RECOMMENDED_ANCHOR_SPREAD_M,
   RECOMMENDED_SCAN_KEYFRAMES,
   scanActionHint,
   scanManifestToJson,
@@ -290,15 +293,30 @@ export default function GardenMobileScan() {
   const uploadPrefix = session?.upload_prefix ?? (user ? `${user.id}/${sessionId}` : "");
   const uploadTargets = useMemo(() => buildUploadTargets(uploadPrefix || "pending"), [uploadPrefix]);
   const alignedAnchorCount = countAlignableAnchors(anchors);
+  const anchorSpreadM = anchorSpreadMeters(anchors);
   const requiredFramesReady = frames.length >= MIN_SCAN_KEYFRAMES;
-  const anchorsReady = alignedAnchorCount >= MIN_ALIGNED_ANCHORS;
+  const anchorCountReady = alignedAnchorCount >= MIN_ALIGNED_ANCHORS;
+  const anchorSpreadReady = alignedAnchorCount < MIN_ALIGNED_ANCHORS || anchorSpreadM >= MIN_ANCHOR_SPREAD_M;
+  const anchorsReady = anchorCountReady && anchorSpreadReady;
   const readyToUpload = Boolean(session && uploadPrefix && requiredFramesReady && anchorsReady);
   const selectedAnchor = anchorTargets.find((candidate) => candidate.id === selectedAnchorId) ?? null;
+  const hasMapAnchorTargets = anchorTargets.some((target) => Boolean(target.mapLngLat && target.local));
   const uploadBlockedReason = !requiredFramesReady
     ? `${Math.max(0, MIN_SCAN_KEYFRAMES - frames.length)} keyframes mangler`
-    : !anchorsReady
+    : !anchorCountReady
       ? `${Math.max(0, MIN_ALIGNED_ANCHORS - alignedAnchorCount)} kortankre mangler`
+      : !anchorSpreadReady
+        ? "vælg ankre længere fra hinanden"
       : "";
+  const readinessHint = !requiredFramesReady
+    ? "Gå langsomt rundt mens kameraet selv samler keyframes."
+    : !anchorCountReady
+      ? "Tryk mindst to kortankre i kameraet."
+      : !anchorSpreadReady
+        ? "Vælg to ankre med mere afstand, fx hushjørne og skur/låge."
+        : anchorSpreadM < RECOMMENDED_ANCHOR_SPREAD_M
+          ? "Klar til upload. Et ekstra anker længere væk giver bedre alignment."
+          : "Klar til upload med stærkere alignment-grundlag.";
 
   useEffect(() => {
     document.body.classList.add("is-mobile-scan");
@@ -334,6 +352,7 @@ export default function GardenMobileScan() {
       const nextTargets = targets.length ? targets : fallbackAnchorTargets();
       setAnchorTargets(nextTargets);
       setMapFrame(readMapFrame(sessionRow.capture_metadata));
+      if (Array.isArray(sessionRow.anchors)) setAnchors(sessionRow.anchors as GardenScanAnchorObservation[]);
       setSelectedAnchorId(nextTargets[0]?.id ?? null);
       setState(["uploaded", "processing", "ready"].includes(sessionRow.status) ? "uploaded" : "ready");
     }
@@ -590,9 +609,11 @@ export default function GardenMobileScan() {
       capture_quality: {
         keyframe_count: frames.length,
         aligned_anchor_count: alignedAnchorCount,
+        anchor_spread_m: anchorSpreadM,
         capture_seconds: manifest.capture.duration_seconds,
         recommended_keyframes: RECOMMENDED_SCAN_KEYFRAMES,
         recommended_anchors: RECOMMENDED_ALIGNED_ANCHORS,
+        recommended_anchor_spread_m: RECOMMENDED_ANCHOR_SPREAD_M,
       },
       device_motion_samples: motionSamplesRef.current,
       anchors,
@@ -626,6 +647,7 @@ export default function GardenMobileScan() {
             frame_count: frames.length,
             anchor_count: anchors.length,
             aligned_anchor_count: alignedAnchorCount,
+            anchor_spread_m: anchorSpreadM,
             motion_samples: motionSamplesRef.current.length,
           },
         },
@@ -687,7 +709,7 @@ export default function GardenMobileScan() {
           <div className="mobile-scan-hud">
             <span><Camera size={13} /> {frames.length}/{RECOMMENDED_SCAN_KEYFRAMES} auto</span>
             <span><CircleDot size={13} /> {alignedAnchorCount}/{MIN_ALIGNED_ANCHORS} ankre</span>
-            <span><Compass size={13} /> {captureSeconds}s</span>
+            <span><Compass size={13} /> {anchorSpreadM ? `${Math.round(anchorSpreadM)}m` : `${captureSeconds}s`}</span>
           </div>
           {state === "camera" && selectedAnchor && (
             <div className="mobile-scan-target-hint">
@@ -697,10 +719,15 @@ export default function GardenMobileScan() {
         </div>
 
         {cameraError && <p className="mobile-scan-error">{cameraError}</p>}
+        {state !== "loading" && state !== "uploaded" && !hasMapAnchorTargets && (
+          <p className="mobile-scan-error">
+            Scan-sessionen mangler kortankre. Start en ny 3D-scan fra Havemåler, så kameraet kan alignes til plænen.
+          </p>
+        )}
 
         <div className="mobile-scan-actions">
           {state === "ready" && (
-            <button type="button" className="btn btn-primary" onClick={startCamera}>
+            <button type="button" className="btn btn-primary" onClick={startCamera} disabled={!hasMapAnchorTargets}>
               <Video size={16} /> Start kamera
             </button>
           )}
@@ -728,7 +755,7 @@ export default function GardenMobileScan() {
 
         {state === "camera" && (
           <div className="mobile-scan-anchors">
-            <p>Vælg et kortanker, og tryk det samme punkt i kameraet. Det er det der gør alignment muligt.</p>
+            <p>{readinessHint}</p>
             {anchorTargets.map((target, index) => (
               <button
                 type="button"
@@ -751,7 +778,7 @@ export default function GardenMobileScan() {
 
         <footer className="mobile-scan-footer">
           <span>{scanActionHint(currentStatus)}</span>
-          <small>{uploadTargets.filter((target) => target.required).length} krævede filer · {frames.length} keyframes · {alignedAnchorCount} kortankre · {uploadPrefix || "afventer session"}</small>
+          <small>{uploadTargets.filter((target) => target.required).length} krævede filer · {frames.length} keyframes · {alignedAnchorCount} kortankre · {Math.round(anchorSpreadM)}m ankerafstand · {uploadPrefix || "afventer session"}</small>
         </footer>
       </section>
     </div>

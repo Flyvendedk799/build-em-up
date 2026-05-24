@@ -13,6 +13,7 @@ import {
   type Ring,
 } from "@/lib/gardenDepth";
 import {
+  anchorSpreadMeters,
   buildUploadTargets,
   canTransitionScanStatus,
   countAlignableAnchors,
@@ -124,11 +125,19 @@ describe("gardenDepth", () => {
     };
     expect(inspectScanManifest(valid).ready).toBe(true);
     expect(countAlignableAnchors(valid.anchors)).toBe(2);
+    expect(anchorSpreadMeters(valid.anchors)).toBeGreaterThan(3);
     expect(validateScanManifest({ ...valid, anchors: [] })).toContain("too_few_anchors");
     expect(validateScanManifest({
       ...valid,
       anchors: valid.anchors.map((anchor) => ({ id: anchor.id, mapLngLat: anchor.mapLngLat, confidence: anchor.confidence })),
     })).toContain("too_few_aligned_anchors");
+    expect(validateScanManifest({
+      ...valid,
+      anchors: [
+        { ...valid.anchors[0], mapLngLat: lawn[0] },
+        { ...valid.anchors[1], mapLngLat: lawn[0] },
+      ],
+    })).toContain("weak_anchor_spread");
     expect(validateScanManifest({ ...valid, capture: { ...valid.capture, keyframe_count: 4 } })).toContain("too_few_keyframes");
   });
 

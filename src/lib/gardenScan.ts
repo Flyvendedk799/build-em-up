@@ -81,6 +81,8 @@ export const MIN_SCAN_KEYFRAMES = 8;
 export const RECOMMENDED_SCAN_KEYFRAMES = 18;
 export const MIN_ALIGNED_ANCHORS = 2;
 export const RECOMMENDED_ALIGNED_ANCHORS = 4;
+export const MIN_ANCHOR_SPREAD_M = 3;
+export const RECOMMENDED_ANCHOR_SPREAD_M = 8;
 
 export const SCAN_UPLOAD_TARGETS: Array<Omit<ScanUploadTarget, "path" | "signedUrl" | "token"> & { fileName: string }> = [
   { kind: "manifest", fileName: "manifest.json", contentType: "application/json", required: true },
@@ -236,6 +238,25 @@ export function countAlignableAnchors(value: unknown) {
   return Array.isArray(value) ? value.filter(isAlignableScanAnchor).length : 0;
 }
 
+function distanceMeters(a: [number, number], b: [number, number]) {
+  const midLat = ((a[1] + b[1]) / 2) * Math.PI / 180;
+  const dx = (b[0] - a[0]) * 111_320 * Math.cos(midLat);
+  const dy = (b[1] - a[1]) * 111_320;
+  return Math.hypot(dx, dy);
+}
+
+export function anchorSpreadMeters(value: unknown) {
+  if (!Array.isArray(value)) return 0;
+  const anchors = value.filter(isAlignableScanAnchor);
+  let best = 0;
+  for (let i = 0; i < anchors.length; i += 1) {
+    for (let j = i + 1; j < anchors.length; j += 1) {
+      best = Math.max(best, distanceMeters(anchors[i].mapLngLat!, anchors[j].mapLngLat!));
+    }
+  }
+  return Number(best.toFixed(2));
+}
+
 export function inspectScanManifest(value: unknown): { manifest: GardenScanManifest | null; issues: PipelineIssue[]; ready: boolean } {
   const issues: PipelineIssue[] = [];
   if (!value || typeof value !== "object") {
@@ -278,6 +299,14 @@ export function inspectScanManifest(value: unknown): { manifest: GardenScanManif
     issues.push({ severity: "error", code: "too_few_aligned_anchors", message: "Mindst 2 ankre skal have både kortpunkt og kamerapunkt." });
   } else if (alignableAnchorCount < RECOMMENDED_ALIGNED_ANCHORS) {
     issues.push({ severity: "warning", code: "less_than_recommended_anchors", message: "4 ankre anbefales for stærkere alignment." });
+  }
+  if (alignableAnchorCount >= MIN_ALIGNED_ANCHORS) {
+    const spreadM = anchorSpreadMeters(row.anchors);
+    if (spreadM < MIN_ANCHOR_SPREAD_M) {
+      issues.push({ severity: "error", code: "weak_anchor_spread", message: "Ankre skal ligge tydeligt fra hinanden på kortet." });
+    } else if (spreadM < RECOMMENDED_ANCHOR_SPREAD_M) {
+      issues.push({ severity: "warning", code: "close_anchor_spread", message: "Brug gerne ankre længere fra hinanden for bedre alignment." });
+    }
   }
   if (!row.files?.tracking) issues.push({ severity: "error", code: "missing_tracking_file", message: "tracking.json mangler." });
   if (!row.files?.keyframes) issues.push({ severity: "error", code: "missing_keyframes_file", message: "keyframes.json mangler." });
