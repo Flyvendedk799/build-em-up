@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Camera, CheckCircle2, CircleDot, Compass, UploadCloud, Video } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { AppNav } from "@/components/layout/SiteChrome";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
+import type { LngLat, LocalPoint } from "@/lib/gardenDepth";
 import {
   buildUploadTargets,
   inspectScanManifest,
@@ -36,8 +37,24 @@ type MotionSample = {
 };
 
 type CaptureState = "loading" | "ready" | "camera" | "uploading" | "uploaded" | "error";
+type AnchorKind = NonNullable<GardenScanAnchorObservation["kind"]>;
+type AnchorTarget = {
+  id: string;
+  label: string;
+  kind: AnchorKind;
+  mapLngLat?: LngLat | null;
+  local?: LocalPoint | null;
+  priority: number;
+};
 
-const ANCHOR_PRESETS: Array<NonNullable<GardenScanAnchorObservation["kind"]>> = [
+type AnchorMapFrame = {
+  boundary: LngLat[];
+  localBoundary: LocalPoint[];
+  localLawnRings: LocalPoint[][];
+  areaM2?: number | null;
+};
+
+const ANCHOR_PRESETS: AnchorKind[] = [
   "house_corner",
   "terrace_corner",
   "shed_corner",
@@ -74,6 +91,170 @@ function supportsDeviceMotionPermission() {
   return typeof ctor?.requestPermission === "function";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readLngLat(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const [lng, lat] = value;
+  return typeof lng === "number" && typeof lat === "number" ? [lng, lat] : null;
+}
+
+function readLocalPoint(value: unknown): LocalPoint | null {
+  if (!isRecord(value)) return null;
+  return typeof value.x === "number" && typeof value.z === "number" ? { x: value.x, z: value.z } : null;
+}
+
+function readLocalPointArray(value: unknown): LocalPoint[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(readLocalPoint).filter((point): point is LocalPoint => Boolean(point));
+}
+
+function readLocalRings(value: unknown): LocalPoint[][] {
+  if (!Array.isArray(value)) return [];
+  return value.map(readLocalPointArray).filter((ring) => ring.length >= 3);
+}
+
+function fallbackAnchorTargets(): AnchorTarget[] {
+  return ANCHOR_PRESETS.map((kind, index) => ({
+    id: `manual-anchor-${index + 1}`,
+    label: anchorLabels[kind],
+    kind,
+    mapLngLat: null,
+    priority: index + 1,
+  }));
+}
+
+function readAnchorTargets(metadata: unknown): AnchorTarget[] {
+  if (!isRecord(metadata)) return [];
+  const raw = Array.isArray(metadata.map_anchor_targets) ? metadata.map_anchor_targets : [];
+  return raw
+    .filter(isRecord)
+    .map((row, index): AnchorTarget => {
+      const kind = typeof row.kind === "string" && row.kind in anchorLabels ? row.kind as AnchorKind : "boundary_corner";
+      return {
+        id: typeof row.id === "string" ? row.id : `map-anchor-${index + 1}`,
+        label: typeof row.label === "string" ? row.label : anchorLabels[kind],
+        kind,
+        mapLngLat: readLngLat(row.lngLat),
+        local: readLocalPoint(row.local),
+        priority: typeof row.priority === "number" ? row.priority : index + 1,
+      };
+    })
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, 6);
+}
+
+function readMapFrame(metadata: unknown): AnchorMapFrame | null {
+  if (!isRecord(metadata)) return null;
+  const rawFrame = metadata.map_frame;
+  if (!isRecord(rawFrame)) return null;
+  const boundary = Array.isArray(rawFrame.boundary)
+    ? rawFrame.boundary.map(readLngLat).filter((point): point is LngLat => Boolean(point))
+    : [];
+  const localBoundary = readLocalPointArray(rawFrame.local_boundary);
+  const localLawnRings = readLocalRings(rawFrame.local_lawn_rings);
+  if (localBoundary.length < 3 && !localLawnRings.length) return null;
+  return {
+    boundary,
+    localBoundary,
+    localLawnRings,
+    areaM2: typeof rawFrame.area_m2 === "number" ? rawFrame.area_m2 : null,
+  };
+}
+
+function boundsForMap(frame: AnchorMapFrame | null, targets: AnchorTarget[]) {
+  const points = [
+    ...(frame?.localBoundary ?? []),
+    ...(frame?.localLawnRings.flat() ?? []),
+    ...targets.map((target) => target.local).filter((point): point is LocalPoint => Boolean(point)),
+  ];
+  if (!points.length) return null;
+  const xs = points.map((point) => point.x);
+  const zs = points.map((point) => point.z);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+  const width = Math.max(1, maxX - minX);
+  const depth = Math.max(1, maxZ - minZ);
+  return { minX, maxX, minZ, maxZ, width, depth };
+}
+
+function mapPoint(point: LocalPoint, bounds: NonNullable<ReturnType<typeof boundsForMap>>) {
+  const padding = 12;
+  const drawable = 100 - padding * 2;
+  return {
+    x: padding + ((point.x - bounds.minX) / bounds.width) * drawable,
+    y: padding + ((point.z - bounds.minZ) / bounds.depth) * drawable,
+  };
+}
+
+function pathFromRing(ring: LocalPoint[], bounds: NonNullable<ReturnType<typeof boundsForMap>>) {
+  return ring.map((point) => {
+    const mapped = mapPoint(point, bounds);
+    return `${mapped.x.toFixed(2)},${mapped.y.toFixed(2)}`;
+  }).join(" ");
+}
+
+function MobileAnchorMap({
+  frame,
+  targets,
+  selectedAnchorId,
+  anchors,
+  onSelect,
+}: {
+  frame: AnchorMapFrame | null;
+  targets: AnchorTarget[];
+  selectedAnchorId: string | null;
+  anchors: GardenScanAnchorObservation[];
+  onSelect: (id: string) => void;
+}) {
+  const bounds = boundsForMap(frame, targets);
+  const doneIds = new Set(anchors.map((anchor) => anchor.id));
+  if (!bounds || !targets.some((target) => target.local)) return null;
+
+  return (
+    <div className="mobile-scan-map" aria-label="Kortankre">
+      <div>
+        <span>Kortankre</span>
+        <strong>{doneIds.size}/{Math.min(4, Math.max(2, targets.length))}</strong>
+      </div>
+      <svg viewBox="0 0 100 100" role="img" aria-label="Skitse af have og ankerpunkter">
+        {frame?.localBoundary.length ? (
+          <polygon className="mobile-scan-map__boundary" points={pathFromRing(frame.localBoundary, bounds)} />
+        ) : null}
+        {frame?.localLawnRings.map((ring, index) => (
+          <polygon className="mobile-scan-map__lawn" points={pathFromRing(ring, bounds)} key={`lawn-${index}`} />
+        ))}
+        {targets.map((target, index) => {
+          if (!target.local) return null;
+          const point = mapPoint(target.local, bounds);
+          const selected = selectedAnchorId === target.id;
+          const done = doneIds.has(target.id);
+          return (
+            <g
+              key={target.id}
+              role="button"
+              tabIndex={0}
+              className={`mobile-scan-map__anchor ${selected ? "is-selected" : ""} ${done ? "is-done" : ""}`}
+              onClick={() => onSelect(target.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") onSelect(target.id);
+              }}
+              aria-label={target.label}
+            >
+              <circle cx={point.x} cy={point.y} r={selected ? 4.8 : 4} />
+              <text x={point.x} y={point.y + 1.5}>{index + 1}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 export default function GardenMobileScan() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -91,6 +272,9 @@ export default function GardenMobileScan() {
   const [gardenName, setGardenName] = useState("Have");
   const [frames, setFrames] = useState<FrameCapture[]>([]);
   const [anchors, setAnchors] = useState<GardenScanAnchorObservation[]>([]);
+  const [anchorTargets, setAnchorTargets] = useState<AnchorTarget[]>([]);
+  const [mapFrame, setMapFrame] = useState<AnchorMapFrame | null>(null);
+  const [selectedAnchorId, setSelectedAnchorId] = useState<string | null>(null);
   const [motionEnabled, setMotionEnabled] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -99,6 +283,7 @@ export default function GardenMobileScan() {
   const requiredFramesReady = frames.length >= 8;
   const anchorsReady = anchors.length >= 2;
   const readyToUpload = Boolean(session && uploadPrefix && requiredFramesReady && anchorsReady);
+  const selectedAnchor = anchorTargets.find((candidate) => candidate.id === selectedAnchorId) ?? null;
 
   useEffect(() => {
     document.body.classList.add("is-mobile-scan");
@@ -130,6 +315,11 @@ export default function GardenMobileScan() {
       }
       setSession(sessionRow as GardenScanSession);
       setGardenName(gardenRow?.name ?? "Have");
+      const targets = readAnchorTargets(sessionRow.capture_metadata);
+      const nextTargets = targets.length ? targets : fallbackAnchorTargets();
+      setAnchorTargets(nextTargets);
+      setMapFrame(readMapFrame(sessionRow.capture_metadata));
+      setSelectedAnchorId(nextTargets[0]?.id ?? null);
       setState(["uploaded", "processing", "ready"].includes(sessionRow.status) ? "uploaded" : "ready");
     }
     void load();
@@ -170,6 +360,9 @@ export default function GardenMobileScan() {
   async function startCamera() {
     setCameraError(null);
     try {
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Kamera kræver HTTPS på telefonen. Åbn scan-linket fra den sikre Havemåler-side og prøv igen.");
+      }
       let motionGranted = false;
       if (supportsDeviceMotionPermission()) {
         const ctor = window.DeviceMotionEvent as MotionPermissionCtor;
@@ -240,22 +433,41 @@ export default function GardenMobileScan() {
     return frame;
   }
 
-  async function addAnchor(kind: NonNullable<GardenScanAnchorObservation["kind"]>) {
-    let evidence = frames.at(-1)?.id;
-    if (frames.length === 0) {
-      const frame = await captureFrame();
-      evidence = frame?.id;
-    }
+  async function markAnchor(target: AnchorTarget, imagePoint: { x: number; y: number }) {
+    const frame = await captureFrame();
+    const evidence = frame?.id ?? frames.at(-1)?.id;
+    const markedIds = new Set([...anchors.map((anchor) => anchor.id), target.id]);
     setAnchors((prev) => [
-      ...prev,
+      ...prev.filter((anchor) => anchor.id !== target.id),
       {
-        id: `anchor-${prev.length + 1}`,
-        kind,
-        label: anchorLabels[kind],
-        confidence: evidence ? 0.7 : 0.55,
+        id: target.id,
+        kind: target.kind,
+        label: target.label,
+        mapLngLat: target.mapLngLat ?? null,
+        imagePoint,
+        confidence: evidence && target.mapLngLat ? 0.82 : evidence ? 0.62 : 0.45,
         evidenceFrameIds: evidence ? [evidence] : [],
       },
     ]);
+    const nextTarget = anchorTargets.find((candidate) => !markedIds.has(candidate.id));
+    setSelectedAnchorId(nextTarget?.id ?? target.id);
+  }
+
+  function imagePointFromEvent(event: PointerEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: Number(((event.clientX - rect.left) / Math.max(1, rect.width)).toFixed(4)),
+      y: Number(((event.clientY - rect.top) / Math.max(1, rect.height)).toFixed(4)),
+    };
+  }
+
+  async function handleCameraTap(event: PointerEvent<HTMLDivElement>) {
+    if (state !== "camera") return;
+    if (!selectedAnchor) {
+      toast("Vælg et anker først");
+      return;
+    }
+    await markAnchor(selectedAnchor, imagePointFromEvent(event));
   }
 
   async function uploadCapture() {
@@ -385,7 +597,17 @@ export default function GardenMobileScan() {
           <small>{scanStatusLabel(currentStatus)} · {scanProgress(currentStatus)}%</small>
         </header>
 
-        <div className="mobile-scan-camera">
+        {state !== "uploaded" && (
+          <MobileAnchorMap
+            frame={mapFrame}
+            targets={anchorTargets}
+            selectedAnchorId={selectedAnchorId}
+            anchors={anchors}
+            onSelect={setSelectedAnchorId}
+          />
+        )}
+
+        <div className={`mobile-scan-camera ${state === "camera" ? "is-marking" : ""}`} onPointerDown={(event) => { void handleCameraTap(event); }}>
           {state === "camera" || state === "uploading" ? (
             <video ref={videoRef} playsInline muted />
           ) : (
@@ -400,6 +622,11 @@ export default function GardenMobileScan() {
             <span><CircleDot size={13} /> {anchors.length}/2 ankre</span>
             <span><Compass size={13} /> {motionEnabled ? "Motion" : "Video"}</span>
           </div>
+          {state === "camera" && selectedAnchor && (
+            <div className="mobile-scan-target-hint">
+              Tryk {anchorTargets.findIndex((target) => target.id === selectedAnchor.id) + 1}: {selectedAnchor.label}
+            </div>
+          )}
         </div>
 
         {cameraError && <p className="mobile-scan-error">{cameraError}</p>}
@@ -434,9 +661,16 @@ export default function GardenMobileScan() {
 
         {state === "camera" && (
           <div className="mobile-scan-anchors">
-            {ANCHOR_PRESETS.map((kind) => (
-              <button type="button" key={kind} onClick={() => void addAnchor(kind)}>
-                {anchorLabels[kind]}
+            <p>Vælg et kortanker, og tryk det samme punkt i kameraet. Det er det der gør alignment muligt.</p>
+            {anchorTargets.map((target, index) => (
+              <button
+                type="button"
+                key={target.id}
+                className={`${selectedAnchorId === target.id ? "is-selected" : ""} ${anchors.some((anchor) => anchor.id === target.id) ? "is-done" : ""}`}
+                onClick={() => setSelectedAnchorId(target.id)}
+              >
+                <b>{index + 1}</b>
+                <span>{target.label}</span>
               </button>
             ))}
           </div>

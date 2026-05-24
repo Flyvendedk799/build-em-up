@@ -44,12 +44,14 @@ export default function GardenTwinViewer({ model, className, compact = false }: 
   const stats = useMemo(() => {
     if (!model) return null;
     const scanObjects = model.objects.filter((object) => object.source === "user_scan" || object.source === "ai_reconstruction").length;
+    const scanAligned = model.alignment.mode === "scan-anchored";
     return {
       objects: model.objects.length,
       confidence: Math.round(model.alignment.confidence * 100),
       quality: model.quality.score,
       grade: model.quality.grade,
-      source: scanObjects ? "Mobilscan" : "Satellit",
+      source: scanAligned || scanObjects ? "Mobilscan" : "Flad kort-preview",
+      scanAligned,
       area: model.terrain.areaM2 ? `${Math.round(model.terrain.areaM2)} m2` : "ukendt areal",
     };
   }, [model]);
@@ -161,11 +163,16 @@ export default function GardenTwinViewer({ model, className, compact = false }: 
         </div>
         <div className="garden-twin-kpis">
           <span><Box size={13} /> {stats.objects} objekter</span>
-          <span><ShieldCheck size={13} /> {stats.confidence}% alignment</span>
+          <span><ShieldCheck size={13} /> {stats.scanAligned ? `${stats.confidence}% alignment` : "ikke scannet"}</span>
           <span><Mountain size={13} /> {stats.quality}/100 kvalitet</span>
           {warningCount > 0 && <span><Eye size={13} /> {warningCount} estimater</span>}
         </div>
       </div>
+      {!stats.scanAligned && (
+        <div className="garden-twin-unscanned">
+          Flad preview fra 2D-kortet. Højder, træer, hegn og forhindringer kommer først efter mobilscan.
+        </div>
+      )}
       <div className="garden-twin-toggles" aria-label="3D lag">
         <Toggle active={toggles.objects} icon={<Layers3 size={14} />} label="Objekter" onClick={() => setToggles((prev) => ({ ...prev, objects: !prev.objects }))} />
         <Toggle active={toggles.heights} icon={<Mountain size={14} />} label="Højde" onClick={() => setToggles((prev) => ({ ...prev, heights: !prev.heights }))} />

@@ -30,6 +30,9 @@ export default function GardenScanPanel({
   const summary = depthModel ? summarizeDepthModel(depthModel) : null;
   const inspection = depthModel ? inspectGardenDepthModel(depthModel) : null;
   const stage = depthPipelineStage(depthModel);
+  const isFlatPreview = stage === "satellite_preview" || stage === "outline_only";
+  const geometryCount = isFlatPreview ? depthModel?.terrain.lawnRings.length ?? 0 : summary?.objectCount ?? 0;
+  const confirmedCount = isFlatPreview ? 0 : summary?.highConfidenceObjects ?? 0;
   const latest = sessions[0] ?? null;
   const anchorState = latest ? requiredAnchorCount(latest.status, latest.anchors) : null;
   const canStartAnother = scanCanStartNewSession(sessions);
@@ -42,14 +45,14 @@ export default function GardenScanPanel({
       <div className="garden-scan-panel__head">
         <div>
           <span>3D Garden Twin</span>
-          <strong>{summary ? `${summary.qualityScore}/100 kvalitet` : "Klar til første model"}</strong>
+          <strong>{summary ? `${summary.qualityScore}/100 ${isFlatPreview ? "preview" : "kvalitet"}` : "Klar til mobilscan"}</strong>
         </div>
         <Layers3 size={18} />
       </div>
 
       <div className="garden-scan-panel__metrics">
-        <div><CheckCircle2 size={14} /><strong>{summary?.objectCount ?? 0}</strong><span>objekter</span></div>
-        <div><ShieldCheck size={14} /><strong>{summary?.highConfidenceObjects ?? 0}</strong><span>bekræftet</span></div>
+        <div><CheckCircle2 size={14} /><strong>{geometryCount}</strong><span>{isFlatPreview ? "plæneflader" : "objekter"}</span></div>
+        <div><ShieldCheck size={14} /><strong>{confirmedCount}</strong><span>{isFlatPreview ? "scannede" : "bekræftet"}</span></div>
         <div><Activity size={14} /><strong>{depthModel?.captureReadiness.recommendedSeconds.join("-") ?? "45-90"}</strong><span>sek scan</span></div>
       </div>
 
@@ -71,7 +74,7 @@ export default function GardenScanPanel({
 
       <div className="garden-scan-panel__actions">
         <button type="button" onClick={onBuildPreview} disabled={!canPreview}>
-          <Layers3 size={14} /> Byg preview
+          <Layers3 size={14} /> Flad preview
         </button>
         <button type="button" onClick={onStartScan} disabled={!canStartScan || starting}>
           {starting ? <UploadCloud size={14} /> : <Play size={14} />} {starting ? "Klargør..." : scanButtonLabel}

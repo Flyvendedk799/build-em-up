@@ -77,11 +77,11 @@ describe("gardenDepth", () => {
   it("validates and summarizes generated models", () => {
     const model = generateGardenDepthModel({ lawnRings: [lawn] });
     expect(validateGardenDepthModel(model)).toEqual([]);
-    expect(summarizeDepthModel(model!).objectCount).toBeGreaterThan(0);
+    expect(summarizeDepthModel(model!).objectCount).toBe(0);
     expect(summarizeDepthModel(model!).nextBestAction).toBe("mobile_scan");
     expect(inspectGardenDepthModel(model).readyForSave).toBe(true);
     expect(depthPipelineStage(model)).toBe("satellite_preview");
-    expect(depthPipelineStageLabel("satellite_preview")).toBe("Satellit-preview");
+    expect(depthPipelineStageLabel("satellite_preview")).toBe("Flad kort-preview");
   });
 
   it("builds the mobile web scan URL", () => {
