@@ -11,6 +11,7 @@ type Props = {
   starting: boolean;
   canPreview: boolean;
   canStartScan: boolean;
+  scanButtonLabel?: string;
   onBuildPreview: () => void;
   onStartScan: () => void;
   onShowTwin: () => void;
@@ -23,6 +24,7 @@ export default function GardenScanPanel({
   starting,
   canPreview,
   canStartScan,
+  scanButtonLabel,
   onBuildPreview,
   onStartScan,
   onShowTwin,
@@ -36,7 +38,7 @@ export default function GardenScanPanel({
   const latest = sessions[0] ?? null;
   const anchorState = latest ? requiredAnchorCount(latest.status, latest.anchors) : null;
   const canStartAnother = scanCanStartNewSession(sessions);
-  const scanButtonLabel = canStartAnother ? "Scan mobil" : "Fortsæt scan";
+  const resolvedScanButtonLabel = scanButtonLabel ?? (canStartAnother ? "Scan mobil" : "Fortsæt scan");
   const blockingIssueCount = inspection?.issues.filter((issue) => issue.severity === "error").length ?? 0;
   const warningIssueCount = inspection?.issues.filter((issue) => issue.severity === "warning").length ?? 0;
 
@@ -77,7 +79,7 @@ export default function GardenScanPanel({
           <Layers3 size={14} /> Flad preview
         </button>
         <button type="button" onClick={onStartScan} disabled={!canStartScan || starting}>
-          {starting ? <UploadCloud size={14} /> : <Play size={14} />} {starting ? "Klargør..." : scanButtonLabel}
+          {starting ? <UploadCloud size={14} /> : <Play size={14} />} {starting ? "Klargør..." : resolvedScanButtonLabel}
         </button>
         <button type="button" onClick={onShowTwin} disabled={!depthModel}>
           <ExternalLink size={14} /> Vis 3D

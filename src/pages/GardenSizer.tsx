@@ -851,25 +851,108 @@ export default function GardenSizer() {
     if (!error) setScanSessions((data ?? []) as GardenScanSession[]);
   }
 
+  async function saveGardenForScan(): Promise<SavedGarden | null> {
+    if (!user) {
+      toast("Log ind for at starte mobilscan");
+      navigate("/login?redirect=/havemaaler");
+      return null;
+    }
+    if (!chosen || area === 0 || !generatedDepthModel) {
+      toast("Tegn eller hent en græsflade først");
+      return null;
+    }
+    setSaving(true);
+    try {
+      const gardenPolygon = completedLawns.length === 1
+        ? polygonForRing(completedLawns[0])
+        : { type: "MultiPolygon", coordinates: completedLawns.map((ring) => [[...ring, ring[0]]]) };
+      const depthModelForSave = {
+        ...generatedDepthModel,
+        gardenId: editingGarden?.id ?? generatedDepthModel.gardenId ?? null,
+        name: chosen.name.split(",")[0],
+        generatedAt: new Date().toISOString(),
+      };
+      const gardenPayload = {
+        name: chosen.name.split(",")[0],
+        address: chosen.name,
+        latitude: chosen.center[1],
+        longitude: chosen.center[0],
+        area_m2: Math.round(area),
+        polygon: gardenPolygon,
+        exclusions: exclusions.map(r => ({ type: "Polygon", coordinates: [[...r, r[0]]] })),
+        imagery_source: imagery,
+        thumbnail_url: editingGarden?.thumbnail_url ?? null,
+        depth_model: depthModelToJson(depthModelForSave),
+        depth_model_updated_at: new Date().toISOString(),
+      };
+      const { data: garden, error } = editingGarden
+        ? await supabase
+          .from("gardens")
+          .update(gardenPayload)
+          .eq("id", editingGarden.id)
+          .eq("user_id", user.id)
+          .select()
+          .single()
+        : await supabase
+          .from("gardens")
+          .insert({ user_id: user.id, ...gardenPayload })
+          .select()
+          .single();
+      if (error || !garden) {
+        toast.error("Kunne ikke gemme haven før mobilscan");
+        return null;
+      }
+      const savedGarden = garden as SavedGarden;
+      const depthModelWithGardenId = { ...depthModelForSave, gardenId: savedGarden.id };
+      const { error: depthError } = await supabase.from("gardens").update({
+        depth_model: depthModelToJson(depthModelWithGardenId),
+        depth_model_updated_at: new Date().toISOString(),
+      }).eq("id", savedGarden.id).eq("user_id", user.id);
+      if (depthError) {
+        toast.error("Have gemt, men 3D-grundlaget kunne ikke gemmes");
+        return null;
+      }
+      const zoneError = await syncLawnZones(savedGarden.id, Boolean(editingGarden));
+      if (zoneError) {
+        toast.error("Have gemt, men zonerne kunne ikke gemmes");
+        return null;
+      }
+      setEditingGarden(savedGarden);
+      setSavedDepthModel(depthModelWithGardenId);
+      setActive(savedGarden.id);
+      try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
+      toast.success("Have gemt. Starter mobilscan...");
+      return savedGarden;
+    } catch {
+      toast.error("Kunne ikke gemme haven før mobilscan");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function startGardenScan() {
     if (!user) {
       toast("Log ind for at starte mobilscan");
       navigate("/login?redirect=/havemaaler");
       return;
     }
-    if (!editingGarden?.id) {
-      toast("Gem haven før mobilscan", {
-        description: "Scanningen skal kobles til en gemt have, så browserdata kan alignes med satellitkortet.",
-      });
-      return;
-    }
     if (!generatedDepthModel) {
       toast("Haven mangler en lukket græsflade");
       return;
     }
+    setStartingScan(true);
+    let gardenForScan = editingGarden;
+    if (!gardenForScan?.id) {
+      gardenForScan = await saveGardenForScan();
+      if (!gardenForScan?.id) {
+        setStartingScan(false);
+        return;
+      }
+    }
     const activeSession = scanSessions.find((session) => !isTerminalScanStatus(session.status));
     if (activeSession) {
-      const scanUrl = webGardenScanUrl(editingGarden.id, activeSession.id);
+      const scanUrl = webGardenScanUrl(gardenForScan.id, activeSession.id);
       setScanLaunch({
         sessionId: activeSession.id,
         scanUrl,
@@ -881,13 +964,13 @@ export default function GardenSizer() {
         duration: 7000,
       });
       navigate(scanUrl);
+      setStartingScan(false);
       return;
     }
-    setStartingScan(true);
     try {
       const { data, error } = await supabase.functions.invoke("create-garden-scan-session", {
         body: {
-          garden_id: editingGarden.id,
+          garden_id: gardenForScan.id,
           source: "havemaaler",
           capture_client_version: "mobile-web-v1",
           capture_metadata: {
@@ -909,7 +992,7 @@ export default function GardenSizer() {
       if (error) throw error;
       const sessionId = String(data?.session?.id ?? "");
       if (!sessionId) throw new Error("Scan-session manglede id");
-      const scanUrl = String(data?.scan_url || data?.mobile_web_url || webGardenScanUrl(editingGarden.id, sessionId));
+      const scanUrl = String(data?.scan_url || data?.mobile_web_url || webGardenScanUrl(gardenForScan.id, sessionId));
       setScanLaunch({
         sessionId,
         scanUrl,
@@ -1717,8 +1800,8 @@ export default function GardenSizer() {
                   <button className="tool-btn" onClick={() => loadMatrikel()}>Hent matrikel</button>
                   {matrikel && <button className="tool-btn" onClick={useMatrikelAsBase}>Brug matrikel som plæne</button>}
                   <button className="tool-btn" onClick={refreshDepthPreview} disabled={!generatedDepthModel}>Vis flad 3D</button>
-                  <button className="tool-btn" onClick={startGardenScan} disabled={startingScan || !generatedDepthModel}>
-                    {startingScan ? "Klargør scan…" : canStartNewScan ? "Scan haven i 3D" : "Fortsæt 3D-scan"}
+                  <button className="tool-btn" onClick={startGardenScan} disabled={startingScan || saving}>
+                    {startingScan ? "Klargør scan…" : canStartNewScan ? (editingGarden?.id ? "Scan haven i 3D" : "Gem & scan haven") : "Fortsæt 3D-scan"}
                   </button>
                   {scanLaunch && (
                     <a className="tool-btn" href={scanLaunch.scanUrl}>Åbn mobilscan</a>
@@ -1768,9 +1851,10 @@ export default function GardenSizer() {
                   depthModel={activeDepthModel}
                   sessions={scanSessions}
                   scanLaunch={scanLaunch}
-                  starting={startingScan}
+                  starting={startingScan || saving}
                   canPreview={Boolean(generatedDepthModel)}
-                  canStartScan={Boolean(editingGarden?.id && generatedDepthModel)}
+                  canStartScan
+                  scanButtonLabel={!editingGarden?.id ? "Gem & scan" : undefined}
                   onBuildPreview={refreshDepthPreview}
                   onStartScan={startGardenScan}
                   onShowTwin={() => { if (!activeDepthModel) refreshDepthPreview(); else setMapView("twin"); }}
