@@ -91,7 +91,7 @@ export function actionsFromBedScan(
 ): Omit<CareAction, "id">[] {
   const taskSuggestions = Array.isArray(result.task_suggestions) ? result.task_suggestions : [];
   const actions = taskSuggestions.slice(0, 6).map((item, index) => {
-    const row = item && typeof item === "object" ? item as Record<string, unknown> : { title: item };
+    const row: Record<string, unknown> = item && typeof item === "object" ? (item as Record<string, unknown>) : { title: item };
     const title = text(row.title, text(row.action, `Følg op på bedscan ${index + 1}`));
     const hours = typeof row.due_hours === "number" ? row.due_hours : 24 + index * 12;
     return {
@@ -113,9 +113,10 @@ export function actionsFromBedScan(
         density: result.density,
         dryness: result.dryness,
         disease_pressure: result.disease_pressure,
-      },
+      } as unknown as Json,
     } satisfies Omit<CareAction, "id">;
   });
+
 
   if (actions.length > 0) return actions;
 
