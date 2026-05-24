@@ -210,6 +210,7 @@ export type Database = {
       }
       device_actions: {
         Row: {
+          action: string | null
           approved_at: string | null
           created_at: string
           device_id: string | null
@@ -217,11 +218,14 @@ export type Database = {
           id: string
           kind: string | null
           payload: Json
+          reason: string | null
           requested_at: string
           status: string
           user_id: string
+          zone_id: string | null
         }
         Insert: {
+          action?: string | null
           approved_at?: string | null
           created_at?: string
           device_id?: string | null
@@ -229,11 +233,14 @@ export type Database = {
           id?: string
           kind?: string | null
           payload?: Json
+          reason?: string | null
           requested_at?: string
           status?: string
           user_id: string
+          zone_id?: string | null
         }
         Update: {
+          action?: string | null
           approved_at?: string | null
           created_at?: string
           device_id?: string | null
@@ -241,9 +248,11 @@ export type Database = {
           id?: string
           kind?: string | null
           payload?: Json
+          reason?: string | null
           requested_at?: string
           status?: string
           user_id?: string
+          zone_id?: string | null
         }
         Relationships: [
           {
