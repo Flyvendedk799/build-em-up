@@ -191,7 +191,7 @@ export function actionsFromGrowth(
       zone_id: zoneId ?? null,
       plant_id: plantId ?? null,
       observation_id: observationId,
-      payload: { scan_kind: "growth", harvest_readiness: result.harvest_readiness },
+      payload: { scan_kind: "growth", harvest_readiness: result.harvest_readiness } as unknown as Json,
     });
   }
 
