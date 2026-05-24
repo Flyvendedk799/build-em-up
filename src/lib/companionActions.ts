@@ -173,7 +173,7 @@ export function actionsFromGrowth(
       zone_id: zoneId ?? null,
       plant_id: plantId ?? null,
       observation_id: observationId,
-      payload: { scan_kind: "growth", anomaly_flags: flags, trend: result.trend },
+      payload: { scan_kind: "growth", anomaly_flags: flags, trend: result.trend } as unknown as Json,
     });
   }
 
