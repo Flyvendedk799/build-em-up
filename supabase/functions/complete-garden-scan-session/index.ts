@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
 
     const { data: session, error: sessionError } = await sb
       .from("garden_scan_sessions")
-      .select("id,garden_id,user_id,status,manifest_path,status_history,processing_attempts")
+      .select("id,garden_id,user_id,status,manifest_path,status_history,processing_attempts,capture_metadata")
       .eq("id", sessionId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -155,7 +155,12 @@ Deno.serve(async (req) => {
     if (typeof body.error_detail === "string") updatePayload.error_detail = body.error_detail.slice(0, 2000);
     if (typeof body.manifest_path === "string") updatePayload.manifest_path = body.manifest_path;
     if (Array.isArray(body.anchors)) updatePayload.anchors = body.anchors;
-    if (body.capture_metadata && typeof body.capture_metadata === "object") updatePayload.capture_metadata = objectOrEmpty(body.capture_metadata);
+    if (body.capture_metadata && typeof body.capture_metadata === "object") {
+      updatePayload.capture_metadata = {
+        ...objectOrEmpty(session.capture_metadata),
+        ...objectOrEmpty(body.capture_metadata),
+      };
+    }
     if (resultJson) updatePayload.result_json = resultJson;
     if (confidence !== null) updatePayload.confidence = confidence;
 

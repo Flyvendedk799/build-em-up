@@ -29,6 +29,7 @@ export type GardenScanAnchorObservation = {
   kind?: "house_corner" | "terrace_corner" | "shed_corner" | "gate_or_fence_corner" | "boundary_corner" | "manual";
   mapLngLat?: [number, number] | null;
   arLocal?: { x: number; y: number; z: number } | null;
+  imagePoint?: { x: number; y: number } | null;
   confidence?: number | null;
   evidenceFrameIds?: string[];
 };

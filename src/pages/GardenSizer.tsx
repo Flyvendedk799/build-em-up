@@ -831,8 +831,8 @@ export default function GardenSizer() {
     }
     setSavedDepthModel(generatedDepthModel);
     setMapView("twin");
-    toast.success("3D-forhåndsvisning opdateret", {
-      description: "Satellitmodellen er klar. Mobilscan gør objekter og højder mere præcise.",
+    toast.success("Flad 3D-preview vist", {
+      description: "Dette er kun plænefladen fra 2D-kortet. Højder og forhindringer kræver mobilscan.",
     });
   }
 
@@ -880,6 +880,7 @@ export default function GardenSizer() {
         action: { label: "Åbn", onClick: () => { navigate(scanUrl); } },
         duration: 7000,
       });
+      navigate(scanUrl);
       return;
     }
     setStartingScan(true);
@@ -893,6 +894,15 @@ export default function GardenSizer() {
             depth_model_version: generatedDepthModel.version,
             alignment_mode: "scan-anchored",
             capture_surface: "mobile_web",
+            map_anchor_targets: generatedDepthModel.captureReadiness.anchorSuggestions,
+            map_frame: {
+              center: generatedDepthModel.center,
+              boundary: generatedDepthModel.terrain.boundary,
+              local_boundary: generatedDepthModel.terrain.localBoundary,
+              lawn_rings: generatedDepthModel.terrain.lawnRings,
+              local_lawn_rings: generatedDepthModel.terrain.localLawnRings,
+              area_m2: generatedDepthModel.terrain.areaM2,
+            },
           },
         },
       });
@@ -908,10 +918,11 @@ export default function GardenSizer() {
       });
       setScanSessions((prev) => data?.session ? [data.session as GardenScanSession, ...prev.filter((row) => row.id !== sessionId)] : prev);
       toast.success("Mobilscan er klar", {
-        description: "Åbn kamera-flowet i browseren og brug 2-4 tydelige ankre.",
+        description: "Kamera-flowet åbner nu. Vælg et kortanker og tryk det samme punkt i kameraet.",
         action: { label: "Åbn", onClick: () => { navigate(scanUrl); } },
         duration: 7000,
       });
+      navigate(scanUrl);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Kunne ikke starte 3D-scan");
     } finally {
@@ -1608,7 +1619,7 @@ export default function GardenSizer() {
               <div className="topview-actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <div className="imagery-toggle" style={{ display: "flex", gap: 0, border: "1px solid var(--ink-200)", borderRadius: 8, overflow: "hidden", fontSize: 12 }}>
                   <button onClick={() => setMapView("map")} style={{ padding: "6px 10px", background: mapView === "map" ? "var(--gold)" : "transparent", color: mapView === "map" ? "#14271d" : "inherit", border: 0 }}>2D kort</button>
-                  <button onClick={() => { if (!activeDepthModel) refreshDepthPreview(); else setMapView("twin"); }} disabled={!generatedDepthModel} style={{ padding: "6px 10px", background: mapView === "twin" ? "var(--gold)" : "transparent", color: mapView === "twin" ? "#14271d" : "inherit", border: 0, opacity: generatedDepthModel ? 1 : 0.45 }}>3D twin</button>
+                  <button onClick={() => { if (!activeDepthModel) refreshDepthPreview(); else setMapView("twin"); }} disabled={!generatedDepthModel} style={{ padding: "6px 10px", background: mapView === "twin" ? "var(--gold)" : "transparent", color: mapView === "twin" ? "#14271d" : "inherit", border: 0, opacity: generatedDepthModel ? 1 : 0.45 }}>3D preview</button>
                 </div>
                 <div className="imagery-toggle" style={{ display: "flex", gap: 0, border: "1px solid var(--ink-200)", borderRadius: 8, overflow: "hidden", fontSize: 12 }}>
                   <button onClick={() => ortoCfg && setImagery("ortofoto")} disabled={!ortoCfg} style={{ padding: "6px 10px", background: imagery === "ortofoto" ? "var(--gold)" : "transparent", color: imagery === "ortofoto" ? "#14271d" : "inherit", border: 0, opacity: ortoCfg ? 1 : 0.45 }}>Ortofoto 12cm</button>
@@ -1631,7 +1642,7 @@ export default function GardenSizer() {
                   <div className="help" style={{ zIndex: 2 }}>
                     <span className="dot"></span>
                     <span>
-                      {mapView === "twin" ? "3D Garden Twin viser satellitbaserede estimater. Mobilscan låser objekter, højder og ukendte områder bedre."
+                      {mapView === "twin" ? "Flad 3D-preview fra 2D-kortet. Start mobilscan for rigtige kamera-keyframes, ankre og senere højde/forhindringer."
                         : mode === "wand" ? (wandLoading ? wandStage : wandPreview ? (
                           wandReviewMode === "add" ? "Klik på græs der mangler"
                             : wandReviewMode === "remove" ? "Klik på område der skal væk"
@@ -1705,7 +1716,7 @@ export default function GardenSizer() {
                 <div className="map-secondary-actions" style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
                   <button className="tool-btn" onClick={() => loadMatrikel()}>Hent matrikel</button>
                   {matrikel && <button className="tool-btn" onClick={useMatrikelAsBase}>Brug matrikel som plæne</button>}
-                  <button className="tool-btn" onClick={refreshDepthPreview} disabled={!generatedDepthModel}>Byg 3D preview</button>
+                  <button className="tool-btn" onClick={refreshDepthPreview} disabled={!generatedDepthModel}>Vis flad 3D</button>
                   <button className="tool-btn" onClick={startGardenScan} disabled={startingScan || !generatedDepthModel}>
                     {startingScan ? "Klargør scan…" : canStartNewScan ? "Scan haven i 3D" : "Fortsæt 3D-scan"}
                   </button>

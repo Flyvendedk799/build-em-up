@@ -230,14 +230,14 @@ export function depthPipelineStage(model: GardenDepthModel | null) {
   if (!model) return "missing_2d_geometry";
   if (model.alignment.mode === "scan-anchored" && model.quality.grade === "strong") return "scan_verified";
   if (model.alignment.mode === "scan-anchored") return "scan_needs_review";
-  if (model.objects.length > 0) return "satellite_preview";
+  if (model.terrain.lawnRings.length > 0) return "satellite_preview";
   return "outline_only";
 }
 
 export function depthPipelineStageLabel(stage: ReturnType<typeof depthPipelineStage>) {
   if (stage === "scan_verified") return "Scan-verificeret";
   if (stage === "scan_needs_review") return "Scan kræver tjek";
-  if (stage === "satellite_preview") return "Satellit-preview";
+  if (stage === "satellite_preview") return "Flad kort-preview";
   if (stage === "outline_only") return "Kun havegrænse";
   return "Mangler geometri";
 }
@@ -275,11 +275,7 @@ export function generateGardenDepthModel(input: GenerateDepthModelInput): Garden
   const boundary = input.matrikel && input.matrikel.length >= 3 ? input.matrikel : lawnRings[0];
   const center = input.center ?? centerFromRings([boundary, ...lawnRings]) ?? boundary[0];
   const areaM2 = input.areaM2 ?? safeArea(lawnRings);
-  const objects = [
-    ...perimeterObjects(boundary, center),
-    ...exclusionObjects(input.exclusions ?? [], center),
-    ...generatedCanopyHints(lawnRings, center),
-  ];
+  const objects = exclusionObjects(input.exclusions ?? [], center);
   const anchorSuggestions = anchorSuggestionsForBoundary(boundary, center);
   const quality = qualityForModel({
     objectCount: objects.length,
@@ -306,7 +302,7 @@ export function generateGardenDepthModel(input: GenerateDepthModelInput): Garden
       anchorCount: 0,
       residualM: null,
       confidence: 0.42,
-      notes: "Generated from Havemåler geometry. Add a mobile web scan for anchored depth.",
+      notes: "Flat lawn preview from Havemåler geometry. Add a mobile web scan before trusting depth, height, or obstacle alignment.",
     },
     quality,
     captureReadiness: {
@@ -411,33 +407,6 @@ function safeArea(rings: Ring[]) {
   }, 0));
 }
 
-function perimeterObjects(boundary: Ring, center: LngLat): GardenDepthObject[] {
-  const out: GardenDepthObject[] = [];
-  if (boundary.length < 3) return out;
-  const loop = [...boundary, boundary[0]];
-  for (let i = 0; i < loop.length - 1 && out.length < 10; i += 1) {
-    const a = lngLatToLocal(loop[i], center);
-    const b = lngLatToLocal(loop[i + 1], center);
-    const len = Math.hypot(b.x - a.x, b.z - a.z);
-    if (len < 4) continue;
-    const strip = edgeStrip(a, b, 0.7).map((point) => localToLngLat(point, center));
-    out.push({
-      id: `perimeter-${i + 1}`,
-      type: i % 3 === 0 ? "hedge" : "fence",
-      label: i % 3 === 0 ? "Mulig hæk/skel" : "Muligt hegn/skel",
-      footprint: strip,
-      localFootprint: strip.map((point) => lngLatToLocal(point, center)),
-      areaM2: Number((len * 0.7).toFixed(1)),
-      dimensionsM: { width: Number(len.toFixed(1)), depth: 0.7 },
-      heightRangeM: i % 3 === 0 ? [1.0, 1.8] : [0.8, 1.4],
-      confidence: 0.34,
-      source: "satellite",
-      notes: "Skelobjekt foreslået fra havegrænsen. Bekræft med mobilscan.",
-    });
-  }
-  return out;
-}
-
 function exclusionObjects(exclusions: Ring[], center: LngLat): GardenDepthObject[] {
   return exclusions
     .filter((ring) => ring.length >= 3)
@@ -453,37 +422,8 @@ function exclusionObjects(exclusions: Ring[], center: LngLat): GardenDepthObject
       heightRangeM: [0, 0.25],
       confidence: 0.62,
       source: "manual" as const,
-      notes: "Fra Havemåler-udeladelse. Brug 3D-scan for præcis objekttype.",
+      notes: "Fra Havemåler-udeladelse. Vises som lavt område, ikke som scannet forhindring.",
     }));
-}
-
-function generatedCanopyHints(lawnRings: Ring[], center: LngLat): GardenDepthObject[] {
-  const out: GardenDepthObject[] = [];
-  lawnRings.slice(0, 3).forEach((ring, ringIndex) => {
-    const localRing = ring.map((point) => lngLatToLocal(point, center));
-    const bounds = localBounds(localRing);
-    if (bounds.width < 10 || bounds.depth < 10) return;
-    const radius = Math.max(1.8, Math.min(3.6, Math.min(bounds.width, bounds.depth) * 0.12));
-    const localCenter = {
-      x: bounds.minX + bounds.width * 0.72,
-      z: bounds.minZ + bounds.depth * 0.32,
-    };
-    const localFootprint = circleFootprint(localCenter, radius, 12);
-    out.push({
-      id: `canopy-hint-${ringIndex + 1}`,
-      type: "tree",
-      label: "Mulig trækrone",
-      footprint: localFootprint.map((point) => localToLngLat(point, center)),
-      localFootprint,
-      areaM2: Number((Math.PI * radius * radius).toFixed(1)),
-      dimensionsM: { width: Number((radius * 2).toFixed(1)), depth: Number((radius * 2).toFixed(1)) },
-      heightRangeM: [2.5, 5.5],
-      confidence: 0.26,
-      source: "fallback",
-      notes: "Placeholder for canopy/obstacle layer until scan or AI reconstruction confirms the object.",
-    });
-  });
-  return out;
 }
 
 function anchorSuggestionsForBoundary(boundary: Ring, center: LngLat) {
@@ -503,7 +443,7 @@ function anchorSuggestionsForBoundary(boundary: Ring, center: LngLat) {
 
 function qualityForModel(input: { objectCount: number; anchorCount: number; hasMatrikel: boolean; hasExclusions: boolean }): GardenDepthModel["quality"] {
   let score = 34;
-  const reasons: string[] = ["Satellitmodellen giver skala og havegrænse."];
+  const reasons: string[] = ["Kort-preview giver skala og havegrænse."];
   if (input.hasMatrikel) {
     score += 8;
     reasons.push("Matrikelgrænse er med i modellen.");
@@ -546,28 +486,4 @@ function localBounds(points: LocalPoint[]) {
     width: Math.max(0, maxX - minX),
     depth: Math.max(0, maxZ - minZ),
   };
-}
-
-function circleFootprint(center: LocalPoint, radius: number, segments: number): LocalPoint[] {
-  return Array.from({ length: segments }, (_, index) => {
-    const a = (index / segments) * Math.PI * 2;
-    return {
-      x: center.x + Math.cos(a) * radius,
-      z: center.z + Math.sin(a) * radius,
-    };
-  });
-}
-
-function edgeStrip(a: LocalPoint, b: LocalPoint, widthM: number): LocalPoint[] {
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const len = Math.hypot(dx, dz) || 1;
-  const nx = (-dz / len) * widthM * 0.5;
-  const nz = (dx / len) * widthM * 0.5;
-  return [
-    { x: a.x - nx, z: a.z - nz },
-    { x: b.x - nx, z: b.z - nz },
-    { x: b.x + nx, z: b.z + nz },
-    { x: a.x + nx, z: a.z + nz },
-  ];
 }
