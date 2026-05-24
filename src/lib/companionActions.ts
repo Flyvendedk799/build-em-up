@@ -1,4 +1,5 @@
 import type { Forecast } from "@/lib/wateringAI";
+import type { Json } from "@/integrations/supabase/types";
 import type { CareAction, NormalizedScanResult } from "@/lib/companionTypes";
 
 type ZoneLike = {
@@ -91,7 +92,7 @@ export function actionsFromBedScan(
 ): Omit<CareAction, "id">[] {
   const taskSuggestions = Array.isArray(result.task_suggestions) ? result.task_suggestions : [];
   const actions = taskSuggestions.slice(0, 6).map((item, index) => {
-    const row = item && typeof item === "object" ? item as Record<string, unknown> : { title: item };
+    const row: Record<string, unknown> = item && typeof item === "object" ? (item as Record<string, unknown>) : { title: item };
     const title = text(row.title, text(row.action, `Følg op på bedscan ${index + 1}`));
     const hours = typeof row.due_hours === "number" ? row.due_hours : 24 + index * 12;
     return {
@@ -113,9 +114,10 @@ export function actionsFromBedScan(
         density: result.density,
         dryness: result.dryness,
         disease_pressure: result.disease_pressure,
-      },
+      } as unknown as Json,
     } satisfies Omit<CareAction, "id">;
   });
+
 
   if (actions.length > 0) return actions;
 
@@ -171,7 +173,7 @@ export function actionsFromGrowth(
       zone_id: zoneId ?? null,
       plant_id: plantId ?? null,
       observation_id: observationId,
-      payload: { scan_kind: "growth", anomaly_flags: flags, trend: result.trend },
+      payload: { scan_kind: "growth", anomaly_flags: flags, trend: result.trend } as unknown as Json,
     });
   }
 
@@ -189,7 +191,7 @@ export function actionsFromGrowth(
       zone_id: zoneId ?? null,
       plant_id: plantId ?? null,
       observation_id: observationId,
-      payload: { scan_kind: "growth", harvest_readiness: result.harvest_readiness },
+      payload: { scan_kind: "growth", harvest_readiness: result.harvest_readiness } as unknown as Json,
     });
   }
 

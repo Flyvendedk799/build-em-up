@@ -425,7 +425,7 @@ export function buildWildlifeProfile(zones: WildlifeZone[], plantsByZone: Record
     checks,
     likelyResidents,
     gaps,
-    mixes,
+    mixes: mixes as unknown as WildlifeMix[],
     zonePlans,
     presentPlantNames,
   };

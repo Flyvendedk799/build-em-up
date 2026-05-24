@@ -163,6 +163,7 @@ describe("gardenDepth", () => {
       processing_attempts: 0,
       processing_finished_at: null,
       processing_started_at: null,
+      source: null,
       result_json: null,
       status: "created",
       status_history: [],
