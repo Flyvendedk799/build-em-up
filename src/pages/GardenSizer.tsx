@@ -220,6 +220,11 @@ export default function GardenSizer() {
   const lawnZoneCount = completedLawns.length;
   const totalLawnCorners = completedLawns.reduce((sum, ring) => sum + ring.length, 0) + (!mainClosed ? main.length : currentLawn.length);
 
+  useEffect(() => {
+    document.body.classList.toggle("is-havemaaler-measuring", step === 2);
+    return () => document.body.classList.remove("is-havemaaler-measuring");
+  }, [step]);
+
   // ----- Tokens -----
   useEffect(() => {
     supabase.functions.invoke("get-mapbox-token").then(({ data, error }) => {
@@ -784,6 +789,14 @@ export default function GardenSizer() {
   const activeDepthModel = savedDepthModel ?? generatedDepthModel;
   const depthObjectCount = activeDepthModel?.objects.length ?? 0;
   const canStartNewScan = scanCanStartNewSession(scanSessions);
+  const scanActionLabel = startingScan || saving
+    ? "Klargør scan..."
+    : !generatedDepthModel
+      ? "Tegn plæne først"
+      : canStartNewScan
+        ? (editingGarden?.id ? "Scan haven i 3D" : "Gem & scan haven")
+        : "Fortsæt 3D-scan";
+  const scanPanelButtonLabel = !generatedDepthModel ? "Tegn først" : !editingGarden?.id ? "Gem & scan" : undefined;
 
   // ----- History (undo/redo) -----
   type Snap2 = { main: Ring; mainClosed: boolean; additionalLawns: Ring[]; currentLawn: Ring; exclusions: Ring[] };
@@ -1777,6 +1790,11 @@ export default function GardenSizer() {
 
                   {mapView === "map" && (
                   <div className="tools measurement-tools" style={{ zIndex: 2, flexWrap: "wrap" }}>
+                    {mainClosed && (
+                      <button className="tool-btn scan-primary mobile-scan-tool" onClick={startGardenScan} disabled={startingScan || saving} title="Start mobilscan">
+                        {startingScan || saving ? "Klargør..." : editingGarden?.id ? "Scan 3D" : "Gem & scan"}
+                      </button>
+                    )}
 	                    <button className={`tool-btn ${mode === "draw" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("draw"); }} title="Tegn græszone (1)">{mainClosed ? "+ Græszone" : "Tegn"}</button>
 	                    <button className={`tool-btn ${mode === "edit" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("edit"); }} disabled={!main.length} title="Rediger (2)">Rediger</button>
 	                    <button className={`tool-btn ${mode === "exclude" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("exclude"); }} disabled={!mainClosed} title="Udeluk (3)">− Udeluk</button>
@@ -1797,12 +1815,12 @@ export default function GardenSizer() {
                 </div>
 
                 <div className="map-secondary-actions" style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+                  <button className="tool-btn scan-primary" onClick={startGardenScan} disabled={startingScan || saving}>
+                    {scanActionLabel}
+                  </button>
                   <button className="tool-btn" onClick={() => loadMatrikel()}>Hent matrikel</button>
                   {matrikel && <button className="tool-btn" onClick={useMatrikelAsBase}>Brug matrikel som plæne</button>}
                   <button className="tool-btn" onClick={refreshDepthPreview} disabled={!generatedDepthModel}>Vis flad 3D</button>
-                  <button className="tool-btn" onClick={startGardenScan} disabled={startingScan || saving}>
-                    {startingScan ? "Klargør scan…" : canStartNewScan ? (editingGarden?.id ? "Scan haven i 3D" : "Gem & scan haven") : "Fortsæt 3D-scan"}
-                  </button>
                   {scanLaunch && (
                     <a className="tool-btn" href={scanLaunch.scanUrl}>Åbn mobilscan</a>
                   )}
@@ -1854,7 +1872,7 @@ export default function GardenSizer() {
                   starting={startingScan || saving}
                   canPreview={Boolean(generatedDepthModel)}
                   canStartScan
-                  scanButtonLabel={!editingGarden?.id ? "Gem & scan" : undefined}
+                  scanButtonLabel={scanPanelButtonLabel}
                   onBuildPreview={refreshDepthPreview}
                   onStartScan={startGardenScan}
                   onShowTwin={() => { if (!activeDepthModel) refreshDepthPreview(); else setMapView("twin"); }}
