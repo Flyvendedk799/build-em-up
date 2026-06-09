@@ -80,8 +80,11 @@ export default function GardenScanPanel({
       </div>
 
       {depthModel && (
-        <div className="garden-scan-readiness">
-          <span>{depthPipelineStageLabel(stage)} · {twinStatus}</span>
+        <details className="garden-scan-readiness">
+          <summary>
+            <span>{depthPipelineStageLabel(stage)} · {twinStatus}</span>
+            <b>Detaljer</b>
+          </summary>
           <p>
             {depthModel.quality.reasons.join(" ")}
             {" "}Garden twin er {depthModel.twin.role.visual && depthModel.twin.role.operational ? "visuel og operationel" : "ufuldstaendig"} med {depthModel.twin.confidencePolicy}.
@@ -98,7 +101,7 @@ export default function GardenScanPanel({
             {depthModel.terrain.unknownRegions.length > 0 && <i>{depthModel.terrain.unknownRegions.length} ukendt</i>}
             {!depthModel.twin.model.commercialUseApproved && <i>licens review</i>}
           </div>
-        </div>
+        </details>
       )}
 
       <div className={`garden-scan-panel__actions ${onSaveLater ? "garden-scan-panel__actions--four" : ""}`}>
@@ -147,14 +150,20 @@ export default function GardenScanPanel({
       )}
 
       {sessions.length > 1 && (
-        <div className="garden-scan-history">
+        <details className="garden-scan-history">
+          <summary>
+            <span>Scan-historik</span>
+            <b>{sessions.length - 1}</b>
+          </summary>
+          <div className="garden-scan-history-list">
           {sessions.slice(1, 4).map((session) => (
             <div key={session.id}>
               <span>{scanStatusLabel(session.status)}</span>
               <small>{new Date(session.created_at).toLocaleDateString("da-DK", { day: "numeric", month: "short" })}</small>
             </div>
           ))}
-        </div>
+          </div>
+        </details>
       )}
     </section>
   );
