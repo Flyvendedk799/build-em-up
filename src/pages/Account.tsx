@@ -311,8 +311,11 @@ export default function Account() {
             </div>
           </div>
 
-          <div style={{ marginTop: 22 }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Hvad må deles på tværs?</h3>
+          <details className="account-collapse" open>
+            <summary>
+              <span>Deling på tværs</span>
+              <small>{Object.values(profileSync).filter(Boolean).length}/6 aktive</small>
+            </summary>
             <div className="account-profile-sync">
               <SyncToggle label="Haveprofil" text="Adresse, aktiv have og zoner." checked={profileSync.profileContext}
                 onChange={(checked) => void syncProfileContext({ ...profileSync, profileContext: checked })} />
@@ -327,10 +330,13 @@ export default function Account() {
               <SyncToggle label="Handoff" text="Samme zone/plante åbnes i næste værktøj." checked={profileSync.handoff}
                 onChange={(checked) => void syncProfileContext({ ...profileSync, handoff: checked })} />
             </div>
-          </div>
+          </details>
 
-          <div style={{ marginTop: 22 }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Forbindelser</h3>
+          <details className="account-collapse">
+            <summary>
+              <span>Forbindelser</span>
+              <small>{readiness.active}/{readiness.total} aktive</small>
+            </summary>
             <div className="account-provider-grid">
               {CROSS_PLATFORM_PROVIDERS.map((provider) => {
                 const connection = connectionFor(provider, connections);
@@ -366,10 +372,13 @@ export default function Account() {
                 );
               })}
             </div>
-          </div>
+          </details>
 
-          <div style={{ marginTop: 22 }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Værktøjsflow</h3>
+          <details className="account-collapse">
+            <summary>
+              <span>Værktøjsflow</span>
+              <small>{TOOL_FLOW.length} trin</small>
+            </summary>
             <div className="account-flow">
               {TOOL_FLOW.map((tool, index) => (
                 <Link key={tool.name} to={tool.route} className="account-flow-row">
@@ -382,7 +391,7 @@ export default function Account() {
                 </Link>
               ))}
             </div>
-          </div>
+          </details>
         </Card>
 
         {/* Min have hub — full width */}

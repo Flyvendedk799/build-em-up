@@ -1995,6 +1995,7 @@ export default function GardenSizer() {
                   </div>
 
                   {mapView === "map" && (
+                  <>
                   <div className="tools measurement-tools" style={{ zIndex: 2, flexWrap: "wrap" }}>
                     {mainClosed && (
                       <button className="tool-btn scan-primary mobile-scan-tool" onClick={startGardenScan} disabled={!canStartScanFromGeometry} title="Start mobilscan">
@@ -2005,31 +2006,45 @@ export default function GardenSizer() {
 	                    <button className={`tool-btn ${mode === "edit" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("edit"); }} disabled={!main.length} title="Rediger (2)">Rediger</button>
 	                    <button className={`tool-btn ${mode === "exclude" ? "is-active" : ""}`} onClick={() => { clearWandPreview(); setMode("exclude"); }} disabled={!mainClosed} title="Udeluk (3)">− Udeluk</button>
 	                    <button className={`tool-btn ${mode === "wand" ? "is-active" : ""}`} onClick={() => { setMode("wand"); setWandOp(mainClosed ? "add" : "replace"); clearWandPreview(); }} disabled={wandLoading} title="AI-magic-wand (4)">{wandLoading ? "AI…" : mainClosed ? "✨ AI-zone" : "✨ AI"}</button>
-	                    {mode === "wand" && mainClosed && (
-	                      <>
-	                        <button className={`tool-btn ${wandOp === "replace" ? "is-active" : ""}`} onClick={() => { setWandOp("replace"); clearWandPreview(); }} disabled={wandLoading} title="AI erstat alle zoner">Erstat</button>
-	                        <button className={`tool-btn ${wandOp === "add" ? "is-active" : ""}`} onClick={() => { setWandOp("add"); clearWandPreview(); }} disabled={wandLoading} title="AI tilføj græszone">+ Zone</button>
-	                        <button className={`tool-btn ${wandOp === "subtract" ? "is-active" : ""}`} onClick={() => { setWandOp("subtract"); clearWandPreview(); }} disabled={wandLoading} title="AI udeluk område">− Udeluk</button>
-	                      </>
-	                    )}
                     <button className="tool-btn" onClick={undo} title="Fortryd (Cmd+Z)">↶</button>
                     <button className="tool-btn" onClick={redo} title="Gentag (Cmd+Shift+Z)">↷</button>
+                  </div>
+                  <details className="map-advanced-tools" style={{ zIndex: 2 }} open={mode === "wand" && mainClosed}>
+                    <summary>Flere</summary>
+                    <div>
+                      {mode === "wand" && mainClosed && (
+                        <>
+                          <button className={`tool-btn ${wandOp === "replace" ? "is-active" : ""}`} onClick={() => { setWandOp("replace"); clearWandPreview(); }} disabled={wandLoading} title="AI erstat alle zoner">Erstat</button>
+                          <button className={`tool-btn ${wandOp === "add" ? "is-active" : ""}`} onClick={() => { setWandOp("add"); clearWandPreview(); }} disabled={wandLoading} title="AI tilføj græszone">+ Zone</button>
+                          <button className={`tool-btn ${wandOp === "subtract" ? "is-active" : ""}`} onClick={() => { setWandOp("subtract"); clearWandPreview(); }} disabled={wandLoading} title="AI udeluk område">− Udeluk</button>
+                        </>
+                      )}
                     <button className={`tool-btn ${snapEnabled ? "is-active" : ""}`} onClick={() => setSnapEnabled(v => !v)} title="Snap (S)">Snap</button>
                     <button className="tool-btn" onClick={clear} title="Ryd alt">Ryd</button>
-                  </div>
+                    </div>
+                  </details>
+                  </>
                   )}
                 </div>
 
-                <div className="map-secondary-actions" style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+                <div className="map-primary-actions">
                   <button className="tool-btn scan-primary" onClick={startGardenScan} disabled={!canStartScanFromGeometry}>
                     {scanActionLabel}
                   </button>
                   <button className="tool-btn" onClick={saveGarden} disabled={saving || area === 0}>
                     {saving ? "Gemmer..." : saveLaterLabel}
                   </button>
+                  <button className="tool-btn" onClick={refreshDepthPreview} disabled={!generatedDepthModel}>Vis flad 3D</button>
+                </div>
+
+                <details className="hm-drawer">
+                  <summary>
+                    <span>Flere handlinger</span>
+                    <small>Matrikel, position og scanlink</small>
+                  </summary>
+                  <div className="map-secondary-actions">
                   <button className="tool-btn" onClick={() => loadMatrikel()}>Hent matrikel</button>
                   {matrikel && <button className="tool-btn" onClick={useMatrikelAsBase}>Brug matrikel som plæne</button>}
-                  <button className="tool-btn" onClick={refreshDepthPreview} disabled={!generatedDepthModel}>Vis flad 3D</button>
                   {scanLaunch && (
                     <a className="tool-btn" href={scanLaunch.scanUrl}>Åbn mobilscan</a>
                   )}
@@ -2047,15 +2062,22 @@ export default function GardenSizer() {
                       { enableHighAccuracy: true, timeout: 8000 },
                     );
                   }}>📍 Find mig</button>
-                </div>
+                  </div>
+                </details>
 
-                <div className="sizer-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 16, marginTop: 24 }}>
+                <details className="hm-drawer hm-stats-drawer">
+                  <summary>
+                    <span>Mål og estimat</span>
+                    <small>{area.toFixed(0)} m² · {totalLawnCorners} hjørner</small>
+                  </summary>
+                <div className="sizer-stats">
                   <div className="acct-stat"><div className="v">{lawnZoneCount}</div><div className="l">Græszoner</div></div>
                   <div className="acct-stat"><div className="v">{totalLawnCorners}</div><div className="l">Hjørner</div></div>
                   <div className="acct-stat"><div className="v">{perim.toFixed(0)} m</div><div className="l">Omkreds</div></div>
                   <div className="acct-stat"><div className="v">{depthObjectCount}</div><div className="l">3D objekter</div></div>
                   <div className="acct-stat"><div className="v">{area > 0 ? Math.ceil(area / 8) + " min" : "— min"}</div><div className="l">Estimeret klippetid</div></div>
                 </div>
+                </details>
               </div>
 
               <aside className="recommendation">
@@ -2090,9 +2112,6 @@ export default function GardenSizer() {
                   canSaveLater={area > 0 && !saving}
                 />
 
-                <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={saveGarden} disabled={saving || area === 0}>
-                  {saving ? (editingGarden ? "Opdaterer…" : "Gemmer…") : saveLaterLabel}
-                </button>
                 <Link to="/webshop?cat=robot" className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 10 }}>Se alle robotklippere</Link>
 
                 <div style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 18, lineHeight: 1.5 }}>
