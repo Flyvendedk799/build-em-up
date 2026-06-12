@@ -2140,3 +2140,291 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Focused Havekompagnon shell: beds, plants and watering only. */
+.companion-simple {
+  padding-bottom: 56px;
+}
+
+.companion-simple-hero {
+  max-width: 820px;
+}
+
+.companion-garden-switcher,
+.companion-simple-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.companion-garden-switcher button,
+.companion-simple-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(20, 39, 29, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink-600);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 14px;
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.companion-garden-switcher button:hover,
+.companion-simple-tabs button:hover {
+  transform: translateY(-1px);
+}
+
+.companion-garden-switcher button.active,
+.companion-simple-tabs button.active {
+  background: var(--forest-900);
+  border-color: var(--forest-900);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(20, 39, 29, 0.18);
+}
+
+.companion-simple-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.companion-simple-stat {
+  display: grid;
+  gap: 6px;
+  min-height: 116px;
+}
+
+.companion-simple-stat svg {
+  color: var(--forest-800);
+}
+
+.companion-simple-stat span {
+  color: var(--ink-500);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.companion-simple-stat strong {
+  color: var(--ink-900);
+  font-size: clamp(24px, 4vw, 36px);
+  line-height: 1;
+}
+
+.companion-simple-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
+}
+
+.companion-add-card {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  min-height: 252px;
+  border: 1px dashed rgba(20, 39, 29, 0.22);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.52);
+  color: var(--ink-700);
+  cursor: pointer;
+  text-align: center;
+}
+
+.companion-add-card svg {
+  justify-self: center;
+  color: var(--forest-800);
+}
+
+.companion-add-card span,
+.companion-bed-card-head p,
+.companion-zone-plants header p,
+.companion-water-zone header p,
+.companion-next-water p {
+  color: var(--ink-500);
+  font-size: 13px;
+}
+
+.companion-bed-card {
+  display: grid;
+  gap: 16px;
+}
+
+.companion-bed-card-head,
+.companion-zone-plants header,
+.companion-water-zone header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.companion-bed-card h2,
+.companion-zone-plants h2,
+.companion-water-zone h2,
+.companion-next-water h2,
+.companion-water-history h2 {
+  color: var(--ink-900);
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+.companion-icon-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.companion-icon-actions button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(20, 39, 29, 0.1);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-500);
+  cursor: pointer;
+}
+
+.companion-bed-metrics,
+.companion-card-actions,
+.companion-plant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.companion-bed-metrics span,
+.companion-plant-chips span,
+.companion-plant-chips em {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgba(20, 39, 29, 0.06);
+  color: var(--ink-600);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.companion-plant-list,
+.companion-water-zones,
+.companion-schedule-list,
+.companion-plant-rows {
+  display: grid;
+  gap: 12px;
+}
+
+.companion-zone-plants,
+.companion-water-zone {
+  display: grid;
+  gap: 14px;
+}
+
+.companion-plant-rows {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.companion-plant-rows button {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(20, 39, 29, 0.08);
+  border-radius: 16px;
+  background: rgba(20, 39, 29, 0.025);
+  color: var(--ink-900);
+  cursor: pointer;
+  padding: 13px;
+  text-align: left;
+}
+
+.companion-plant-rows small,
+.companion-plant-rows p,
+.companion-schedule-list p,
+.companion-water-history p,
+.companion-water-history span {
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.companion-water-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+}
+
+.companion-next-water {
+  grid-column: 1 / -1;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(74, 144, 226, 0.18), transparent 36%),
+    linear-gradient(135deg, #ffffff, #f4f8f1);
+}
+
+.companion-water-history {
+  align-self: start;
+  display: grid;
+  gap: 12px;
+}
+
+.companion-water-history div {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid rgba(20, 39, 29, 0.08);
+  padding-top: 10px;
+}
+
+.companion-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 42px;
+  text-align: center;
+}
+
+.companion-empty-state svg {
+  color: var(--forest-800);
+}
+
+.companion-empty-state h2 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.companion-empty-state p {
+  color: var(--ink-500);
+  max-width: 460px;
+}
+
+@media (max-width: 860px) {
+  .companion-simple-hero,
+  .companion-water-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .companion-simple-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .companion-simple-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .companion-card-actions {
+    width: 100%;
+  }
+
+  .companion-card-actions .btn,
+  .companion-card-actions button {
+    flex: 1 1 130px;
+  }
+}

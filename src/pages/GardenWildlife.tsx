@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Leaf, MapPin, PawPrint, Ruler, Sprout } from "lucide-react";
+import { ArrowRight, Leaf, MapPin, PawPrint, Ruler, Sparkles, Sprout } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import WildlifeTab from "@/components/companion/WildlifeTab";
 import type { ZonePlant } from "@/components/watering/PlantChips";
@@ -132,6 +132,9 @@ export default function GardenWildlife() {
             <p>Se hvad der sandsynligvis trives i haven nu, hvilke huller der mangler i fødekæden, og hvilke plantemix der giver mest liv.</p>
           </div>
           <div className="wildlife-page-actions">
+            <a href="/docs/dyreliv-3d-prototype-prompt.md" className="btn btn-ghost btn-sm" target="_blank" rel="noreferrer">
+              <Sparkles size={14} /> 3D prompt
+            </a>
             <Link to="/havekompagnon" className="btn btn-ghost btn-sm">
               <Leaf size={14} /> Havekompagnon
             </Link>

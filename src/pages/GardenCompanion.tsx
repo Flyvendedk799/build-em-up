@@ -1,358 +1,124 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { BarChart3, Bot, CalendarDays, Camera, CheckCircle2, CloudSun, Droplets, Footprints, Gauge, Leaf, MapPin, NotebookPen, PlugZap, Radio, Ruler, ShieldCheck, Sprout, Users, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { Camera, Droplets, Leaf, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import type { Json, Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { useActiveGarden } from "@/lib/activeGarden";
-import type { CompanionView, CareAction, CompanionPreferences as CompanionPreferencesState, MapAnchor } from "@/lib/companionTypes";
-import { readCompanionPreferences } from "@/lib/companionTypes";
-import { generateDeviceActions, generateWeatherActions } from "@/lib/companionActions";
-import { computeHealthScore, computePlantScores, computeZoneScores } from "@/lib/companionHealth";
-import { generateSeasonActions, generateZoneInsights } from "@/lib/companionInsights";
-import { fetchForecast, type Forecast, type Schedule, weekSummary } from "@/lib/wateringAI";
-import CompanionToday from "@/components/companion/CompanionToday";
-import GardenMap from "@/components/companion/GardenMap";
-import GardenCamera from "@/components/companion/GardenCamera";
-import CarePlan from "@/components/companion/CarePlan";
-import CompanionPreferences from "@/components/companion/CompanionPreferences";
-import GardenRound from "@/components/companion/GardenRound";
-import PlantTimeline from "@/components/companion/PlantTimeline";
-import GardenCoach from "@/components/companion/GardenCoach";
-import SeasonPlan from "@/components/companion/SeasonPlan";
-import MorningBriefing from "@/components/watering/MorningBriefing";
-import CalendarTimeline from "@/components/watering/CalendarTimeline";
-import JournalTab from "@/components/watering/JournalTab";
-import IoTTab from "@/components/watering/IoTTab";
-import InsightsTab from "@/components/watering/InsightsTab";
-import NeighborsTab from "@/components/watering/NeighborsTab";
-import CalendarTab from "@/components/watering/CalendarTab";
+import {
+  decide,
+  fetchForecast,
+  litersForSession,
+  upcomingOccurrences,
+  weekSummary,
+  type Forecast,
+  type Schedule,
+  type Zone,
+} from "@/lib/wateringAI";
+import AddBedDialog, { type BedDraft } from "@/components/watering/AddBedDialog";
+import AddPlantsDialog from "@/components/watering/AddPlantsDialog";
+import IdentifyPlantDialog from "@/components/watering/IdentifyPlantDialog";
+import PlantDetailSheet from "@/components/watering/PlantDetailSheet";
+import QuickWaterDialog from "@/components/watering/QuickWaterDialog";
+import ScheduleRow from "@/components/watering/ScheduleRow";
 import type { ZonePlant } from "@/components/watering/PlantChips";
+import "@/styles/watering.css";
 import "@/styles/companion.css";
 
-type View = CompanionView | "yearwheel" | "community" | "round" | "coach";
-type Garden = Tables<"gardens">;
-type Zone = Tables<"garden_zones">;
-type Plant = Tables<"user_plants"> & {
-  plants_catalog?: { name_da: string | null; water_need: string | null; image_url: string | null } | null;
+type Garden = { id: string; name: string; latitude: number | null; longitude: number | null };
+type ZoneRow = Zone & { garden_id: string };
+type EventRow = {
+  id: string;
+  zone_id: string | null;
+  scheduled_for: string;
+  ran_at: string | null;
+  weather_skipped: boolean;
+  reason: string | null;
+  mm_delivered: number | null;
 };
-type Observation = Tables<"garden_observations">;
-type Device = Tables<"devices">;
-type DeviceAction = Tables<"device_actions">;
-type DeviceReading = Tables<"device_readings">;
-type IntegrationConnection = Tables<"integration_connections">;
-type HealthLog = Tables<"plant_health_log">;
-type GrowthSnapshotRow = Tables<"plant_growth_snapshots">;
-type JournalRow = Tables<"garden_journal">;
-type Task = Tables<"task_log">;
-type EventRow = Tables<"watering_events">;
-type CatalogCalendar = {
-  slug: string;
-  name_da: string;
-  sow_months?: number[] | null;
-  harvest_months?: number[] | null;
-  transplant_months?: number[] | null;
-  prune_months?: number[] | null;
-  winterize_months?: number[] | null;
-};
+type View = "beds" | "plants" | "water";
 
-type CompanionHandoff = {
-  source?: string;
-  gardenId?: string | null;
-  zoneId?: string | null;
-  plantId?: string | null;
-  view?: View;
-  scanMode?: "identify" | "diagnosis" | "growth" | "bed_scan" | "photo" | "harvest";
-  createdAt?: string;
-};
-
-const PRIMARY: { key: View; label: string }[] = [
-  { key: "today", label: "I dag" },
-  { key: "round", label: "Havegang" },
-  { key: "map", label: "Kort" },
-  { key: "scan", label: "Scan" },
-  { key: "plan", label: "Plan" },
-];
-
-const SECONDARY: { key: View; label: string; icon: React.ElementType }[] = [
+const VIEW_TABS: { key: View; label: string; icon: typeof Leaf }[] = [
+  { key: "beds", label: "Bede", icon: Leaf },
   { key: "plants", label: "Planter", icon: Sprout },
   { key: "water", label: "Vanding", icon: Droplets },
-  { key: "journal", label: "Dagbog", icon: NotebookPen },
-  { key: "devices", label: "Smart have", icon: Radio },
-  { key: "coach", label: "Coach", icon: Bot },
-  { key: "yearwheel", label: "Årshjul", icon: CalendarDays },
-  { key: "community", label: "Nabolag", icon: Users },
-  { key: "insights", label: "Indsigt", icon: BarChart3 },
 ];
 
-const VIEW_KEYS = new Set<View>([
-  ...PRIMARY.map((item) => item.key),
-  ...SECONDARY.map((item) => item.key),
-]);
-
-const editMeasurementPath = (gardenId: string, next = "/havekompagnon") =>
-  `/havemaaler?garden=${gardenId}&next=${encodeURIComponent(next)}`;
-
-function readCompanionHandoff(): CompanionHandoff | null {
-  try {
-    const raw = localStorage.getItem("companion.handoff");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const view = typeof parsed.view === "string" && VIEW_KEYS.has(parsed.view as View) ? parsed.view as View : undefined;
-    const scanMode = parsed.scanMode === "identify" || parsed.scanMode === "diagnosis" || parsed.scanMode === "growth" || parsed.scanMode === "bed_scan" || parsed.scanMode === "photo" || parsed.scanMode === "harvest"
-      ? parsed.scanMode
-      : undefined;
-    return {
-      source: typeof parsed.source === "string" ? parsed.source : undefined,
-      gardenId: typeof parsed.gardenId === "string" ? parsed.gardenId : null,
-      zoneId: typeof parsed.zoneId === "string" ? parsed.zoneId : null,
-      plantId: typeof parsed.plantId === "string" ? parsed.plantId : null,
-      view,
-      scanMode,
-      createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function readStoredView(): View {
-  const raw = localStorage.getItem("companion.view");
-  return raw && VIEW_KEYS.has(raw as View) ? raw as View : "today";
-}
-
-function priorityOf(value: string | null): CareAction["priority"] {
-  if (value === "urgent" || value === "high" || value === "low") return value;
-  return "normal";
-}
-
-function sourceOf(value: string | null): CareAction["source"] {
-  if (value === "ai" || value === "weather" || value === "sensor" || value === "season" || value === "scan") return value;
-  return "manual";
-}
-
-function statusOf(task: Task): CareAction["status"] {
-  if (task.done) return "done";
-  if (task.snoozed_until && new Date(task.snoozed_until).getTime() > Date.now()) return "snoozed";
-  return "open";
-}
-
-function taskToAction(task: Task): CareAction {
-  return {
-    id: task.id,
-    kind: task.kind,
-    title: task.title,
-    reason: task.reason || task.notes,
-    priority: priorityOf(task.priority),
-    due_at: task.due_at,
-    status: statusOf(task),
-    source: sourceOf(task.source),
-    confidence: task.confidence,
-    garden_id: task.garden_id || "",
-    zone_id: task.zone_id,
-    plant_id: task.plant_id,
-    observation_id: task.observation_id,
-    payload: task.payload,
-  };
-}
-
-function actionToTaskInsert(userId: string, action: Omit<CareAction, "id">) {
-  return {
-    user_id: userId,
-    garden_id: action.garden_id,
-    zone_id: action.zone_id ?? null,
-    plant_id: action.plant_id ?? null,
-    observation_id: action.observation_id ?? null,
-    kind: action.kind,
-    title: action.title,
-    notes: action.reason ?? null,
-    due_at: action.due_at ?? null,
-    priority: action.priority,
-    source: action.source,
-    reason: action.reason ?? null,
-    confidence: action.confidence ?? null,
-    payload: action.payload ?? {},
-  };
-}
-
-function readAnchor(anchor: unknown): MapAnchor {
-  return (anchor && typeof anchor === "object" ? anchor : {}) as MapAnchor;
-}
-
-function normalizeSuggestion(gardenId: string, value: unknown): Omit<CareAction, "id"> | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  const title = typeof row.title === "string" ? row.title : null;
-  if (!title) return null;
-  return {
-    kind: typeof row.kind === "string" ? row.kind : "companion_action",
-    title,
-    reason: typeof row.reason === "string" ? row.reason : null,
-    priority: row.priority === "urgent" || row.priority === "high" || row.priority === "normal" || row.priority === "low" ? row.priority : "normal",
-    due_at: typeof row.due_at === "string" ? row.due_at : null,
-    status: "open",
-    source: sourceOf(typeof row.source === "string" ? row.source : null),
-    confidence: typeof row.confidence === "number" ? row.confidence : null,
-    garden_id: typeof row.garden_id === "string" ? row.garden_id : gardenId,
-    zone_id: typeof row.zone_id === "string" ? row.zone_id : null,
-    plant_id: typeof row.plant_id === "string" ? row.plant_id : null,
-    observation_id: typeof row.observation_id === "string" ? row.observation_id : null,
-    payload: (row.payload && typeof row.payload === "object" ? row.payload : {}) as Json,
-  };
-}
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const plantName = (plant: ZonePlant) => plant.custom_name || plant.name_da || plant.plant_slug || "Plante";
 
 export default function GardenCompanion() {
   const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
   const { activeGardenId, setActive } = useActiveGarden();
-  const [view, setView] = useState<View>(readStoredView);
   const [loading, setLoading] = useState(true);
   const [gardens, setGardens] = useState<Garden[]>([]);
   const [garden, setGarden] = useState<Garden | null>(null);
-  const [zones, setZones] = useState<Zone[]>([]);
-  const [plants, setPlants] = useState<Plant[]>([]);
-  const [observations, setObservations] = useState<Observation[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [connections, setConnections] = useState<IntegrationConnection[]>([]);
-  const [deviceReadings, setDeviceReadings] = useState<DeviceReading[]>([]);
-  const [deviceActions, setDeviceActions] = useState<DeviceAction[]>([]);
-  const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
-  const [growthSnapshots, setGrowthSnapshots] = useState<GrowthSnapshotRow[]>([]);
-  const [journal, setJournal] = useState<JournalRow[]>([]);
-  const [remoteSuggestions, setRemoteSuggestions] = useState<Omit<CareAction, "id">[]>([]);
-  const [generatingActions, setGeneratingActions] = useState(false);
+  const [zones, setZones] = useState<ZoneRow[]>([]);
+  const [plantsByZone, setPlantsByZone] = useState<Record<string, ZonePlant[]>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
-  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
-  const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
-  const [scanPlantId, setScanPlantId] = useState<string | null>(null);
-  const [scanMode, setScanMode] = useState<"identify" | "diagnosis" | "growth" | "bed_scan" | "photo" | "harvest" | undefined>();
-  const [catalogBySlug, setCatalogBySlug] = useState<Record<string, CatalogCalendar>>({});
+  const [view, setView] = useState<View>(() => (localStorage.getItem("companion.simpleView") as View) || "beds");
 
-  const setViewPersist = (next: View) => {
+  const [bedOpen, setBedOpen] = useState(false);
+  const [editingBed, setEditingBed] = useState<BedDraft | undefined>();
+  const [addPlantsZone, setAddPlantsZone] = useState<ZoneRow | null>(null);
+  const [identifyZone, setIdentifyZone] = useState<ZoneRow | null>(null);
+  const [quickWaterZone, setQuickWaterZone] = useState<ZoneRow | null>(null);
+  const [openPlant, setOpenPlant] = useState<{ plant: ZonePlant; zone: ZoneRow } | null>(null);
+
+  function switchView(next: View) {
     setView(next);
-    localStorage.setItem("companion.view", next);
-  };
+    localStorage.setItem("companion.simpleView", next);
+  }
 
-  const load = useCallback(async () => {
+  const reload = async () => {
     if (!user) return;
     setLoading(true);
     const { data: gardenRows } = await supabase
       .from("gardens")
-      .select("*")
+      .select("id,name,latitude,longitude")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
-    const gardenList = (gardenRows ?? []) as Garden[];
-    setGardens(gardenList);
-    const active = gardenList.find((g) => g.id === activeGardenId) ?? gardenList[0] ?? null;
-    setGarden(active);
-    if (active && active.id !== activeGardenId) setActive(active.id);
 
-    if (!active) {
+    const list = (gardenRows ?? []) as Garden[];
+    const selected = list.find((item) => item.id === activeGardenId) ?? list[0] ?? null;
+    setGardens(list);
+    setGarden(selected);
+    if (selected && !activeGardenId) setActive(selected.id);
+
+    if (!selected) {
       setZones([]);
-      setPlants([]);
-      setObservations([]);
-      setTasks([]);
-      setDevices([]);
-      setConnections([]);
-      setDeviceReadings([]);
-      setDeviceActions([]);
-      setHealthLogs([]);
-      setGrowthSnapshots([]);
-      setJournal([]);
-      setRemoteSuggestions([]);
+      setPlantsByZone({});
       setSchedules([]);
       setEvents([]);
       setLoading(false);
       return;
     }
 
-    const [
-      { data: zoneRows },
-      { data: plantRows },
-      { data: observationRows },
-      { data: taskRows },
-      { data: deviceRows },
-      { data: connectionRows },
-      { data: readingRows },
-      { data: deviceActionRows },
-      { data: healthRows },
-      { data: growthRows },
-      { data: journalRows },
-      { data: scheduleRows },
-      { data: eventRows },
-    ] = await Promise.all([
-      supabase.from("garden_zones").select("*").eq("garden_id", active.id).order("created_at", { ascending: true }),
-      supabase.from("user_plants")
-        .select("*,plants_catalog(name_da,water_need,image_url)")
-        .eq("garden_id", active.id)
-        .order("created_at", { ascending: false }),
-      supabase.from("garden_observations").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(200),
-      supabase.from("task_log").select("*").eq("garden_id", active.id).order("due_at", { ascending: true, nullsFirst: false }).limit(120),
-      supabase.from("devices").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }),
-      supabase.from("integration_connections").select("*").eq("garden_id", active.id).order("updated_at", { ascending: false }),
-      supabase.from("device_readings").select("*").eq("garden_id", active.id).order("observed_at", { ascending: false }).limit(120),
-      supabase.from("device_actions").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(60),
-      supabase.from("plant_health_log").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
-      supabase.from("plant_growth_snapshots").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
-      supabase.from("garden_journal").select("*").eq("garden_id", active.id).order("created_at", { ascending: false }).limit(160),
-      supabase.from("watering_schedules").select("*").eq("user_id", user.id),
-      supabase.from("watering_events").select("*").eq("user_id", user.id).order("scheduled_for", { ascending: false }).limit(250),
+    const [{ data: zoneRows }, { data: scheduleRows }, { data: eventRows }, { data: plantRows }] = await Promise.all([
+      supabase.from("garden_zones").select("id,garden_id,name,type,area_m2,sun_exposure,soil").eq("garden_id", selected.id).order("created_at"),
+      supabase.from("watering_schedules").select("id,zone_id,name,weekday_mask,start_time,duration_min,enabled,ai_adjusted").eq("user_id", user.id),
+      supabase.from("watering_events").select("id,zone_id,scheduled_for,ran_at,weather_skipped,reason,mm_delivered").eq("user_id", user.id).order("scheduled_for", { ascending: false }).limit(60),
+      supabase.from("user_plants").select("id,zone_id,plant_slug,custom_name,qty,planted_at,notes,image_url,plants_catalog(name_da,water_need,image_url)").eq("garden_id", selected.id),
     ]);
 
-    setZones((zoneRows ?? []) as Zone[]);
-    setPlants((plantRows ?? []) as Plant[]);
-    setObservations((observationRows ?? []) as Observation[]);
-    setTasks((taskRows ?? []) as Task[]);
-    setDevices((deviceRows ?? []) as Device[]);
-    setConnections((connectionRows ?? []) as IntegrationConnection[]);
-    setDeviceReadings((readingRows ?? []) as DeviceReading[]);
-    setDeviceActions((deviceActionRows ?? []) as DeviceAction[]);
-    setHealthLogs((healthRows ?? []) as HealthLog[]);
-    setGrowthSnapshots((growthRows ?? []) as GrowthSnapshotRow[]);
-    setJournal((journalRows ?? []) as JournalRow[]);
-    setRemoteSuggestions([]);
+    setZones((zoneRows ?? []) as ZoneRow[]);
     setSchedules((scheduleRows ?? []) as Schedule[]);
     setEvents((eventRows ?? []) as EventRow[]);
+    setPlantsByZone(groupPlants(plantRows ?? []));
     setLoading(false);
-  }, [activeGardenId, setActive, user]);
+  };
 
   useEffect(() => {
-    if (!authLoading && !user) navigate("/login?next=/havekompagnon");
-  }, [authLoading, navigate, user]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!garden || loading) return;
-    const handoff = readCompanionHandoff();
-    if (!handoff) return;
-    if (handoff.gardenId && handoff.gardenId !== garden.id) return;
-    if (handoff.createdAt && Date.now() - new Date(handoff.createdAt).getTime() > 10 * 60_000) {
-      localStorage.removeItem("companion.handoff");
+    if (!user) {
+      setLoading(false);
       return;
     }
-
-    const nextZone = handoff.zoneId && zones.some((zone) => zone.id === handoff.zoneId) ? handoff.zoneId : null;
-    const nextPlant = handoff.plantId && plants.some((plant) => plant.id === handoff.plantId) ? handoff.plantId : null;
-    const plantZone = nextPlant ? plants.find((plant) => plant.id === nextPlant)?.zone_id ?? null : null;
-
-    setSelectedZoneId(nextZone ?? plantZone);
-    setSelectedPlantId(nextPlant);
-    if (handoff.scanMode) {
-      setScanMode(handoff.scanMode);
-      setScanPlantId(nextPlant);
-    }
-    if (handoff.view) setViewPersist(handoff.view);
-    localStorage.removeItem("companion.handoff");
-  }, [garden, loading, plants, zones]);
+    void reload();
+  }, [user, activeGardenId]);
 
   useEffect(() => {
     if (!garden?.latitude || !garden?.longitude) {
@@ -362,282 +128,165 @@ export default function GardenCompanion() {
     fetchForecast(garden.latitude, garden.longitude).then(setForecasts).catch(() => setForecasts([]));
   }, [garden?.latitude, garden?.longitude]);
 
-  useEffect(() => {
-    const slugs = Array.from(new Set(plants.map((p) => p.plant_slug).filter(Boolean) as string[]));
-    if (slugs.length === 0) {
-      setCatalogBySlug({});
-      return;
+  const allPlants = useMemo(() => Object.values(plantsByZone).flat(), [plantsByZone]);
+  const summary = useMemo(() => weekSummary(schedules, zones, forecasts), [schedules, zones, forecasts]);
+  const last48 = useMemo(() => forecasts.slice(0, 2).reduce((sum, item) => sum + item.precip_mm, 0), [forecasts]);
+  const nextRun = useMemo(() => {
+    let next: { at: Date; schedule: Schedule; zone: ZoneRow } | null = null;
+    for (const schedule of schedules) {
+      const zone = zones.find((item) => item.id === schedule.zone_id);
+      if (!zone) continue;
+      for (const occurrence of upcomingOccurrences(schedule, 10)) {
+        if (!next || occurrence.getTime() < next.at.getTime()) next = { at: occurrence, schedule, zone };
+      }
     }
-    supabase.from("plants_catalog")
-      .select("slug,name_da,sow_months,harvest_months,transplant_months,prune_months,winterize_months")
-      .in("slug", slugs)
-      .then(({ data }) => {
-        const map: Record<string, CatalogCalendar> = {};
-        ((data ?? []) as CatalogCalendar[]).forEach((row) => { map[row.slug] = row; });
-        setCatalogBySlug(map);
-      });
-  }, [plants]);
+    return next;
+  }, [schedules, zones]);
 
-  const zoneNames = useMemo(() => Object.fromEntries(zones.map((z) => [z.id, z.name])), [zones]);
-  const preferences = useMemo(() => readCompanionPreferences(garden?.preferences), [garden?.preferences]);
-  const plantsByZone = useMemo(() => {
-    const map: Record<string, ZonePlant[]> = {};
-    plants.forEach((plant) => {
-      if (!plant.zone_id) return;
-      (map[plant.zone_id] ||= []).push({
-        id: plant.id,
-        zone_id: plant.zone_id,
-        plant_slug: plant.plant_slug,
-        custom_name: plant.custom_name,
-        qty: plant.qty,
-        planted_at: plant.planted_at,
-        notes: plant.notes,
-        image_url: plant.image_url || plant.plants_catalog?.image_url,
-        name_da: plant.plants_catalog?.name_da,
-        water_need: plant.plants_catalog?.water_need,
-      });
-    });
-    return map;
-  }, [plants]);
+  async function saveBed(bed: BedDraft) {
+    if (!user || !garden) return;
+    const payload = {
+      name: bed.name,
+      type: bed.type as ZoneRow["type"],
+      area_m2: bed.area_m2,
+      sun_exposure: bed.sun_exposure,
+      soil: bed.soil,
+    };
 
-  const summary = useMemo(() => weekSummary(schedules, zones, forecasts), [forecasts, schedules, zones]);
-  const actions = useMemo(() => tasks.map(taskToAction), [tasks]);
-  const healthInput = useMemo(() => ({
-    zones,
-    plants,
-    observations,
-    tasks,
-    devices,
-    readings: deviceReadings,
-    healthLogs,
-    growthSnapshots,
-    forecasts,
-  }), [deviceReadings, devices, forecasts, growthSnapshots, healthLogs, observations, plants, tasks, zones]);
-  const gardenHealth = useMemo(() => computeHealthScore(healthInput), [healthInput]);
-  const zoneScores = useMemo(() => computeZoneScores(healthInput), [healthInput]);
-  const plantScores = useMemo(() => computePlantScores(healthInput), [healthInput]);
-  const zoneInsights = useMemo(() => Object.fromEntries(zones.map((zone) => [
-    zone.id,
-    generateZoneInsights({
-      zone,
-      healthScore: zoneScores[zone.id],
-      observations,
-      tasks,
-      devices,
-      readings: deviceReadings,
-      forecasts,
-    }),
-  ])), [deviceReadings, devices, forecasts, observations, tasks, zoneScores, zones]);
-  const seasonActions = useMemo(() => {
-    if (!garden) return [];
-    return generateSeasonActions({
-      gardenId: garden.id,
-      zones,
-      plants,
-      catalogBySlug,
-      existingTasks: tasks,
-    });
-  }, [catalogBySlug, garden, plants, tasks, zones]);
-  const selectedPlant = useMemo(() => selectedPlantId ? plants.find((plant) => plant.id === selectedPlantId) ?? null : null, [plants, selectedPlantId]);
-  const suggestions = useMemo(() => {
-    if (!garden) return [];
-    const existingTitles = new Set(actions.filter((a) => a.status !== "done").map((a) => a.title));
-    return [
-      ...remoteSuggestions,
-      ...seasonActions,
-      ...generateWeatherActions(garden.id, zones, forecasts),
-      ...generateDeviceActions(garden.id, devices as unknown as Parameters<typeof generateDeviceActions>[1]),
-    ].filter((a) => !existingTitles.has(a.title));
-  }, [actions, devices, forecasts, garden, remoteSuggestions, seasonActions, zones]);
-
-  async function completeAction(id: string) {
-    const { error } = await supabase.from("task_log").update({ done: true, done_at: new Date().toISOString() }).eq("id", id);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    setTasks((prev) => prev.map((task) => task.id === id ? { ...task, done: true, done_at: new Date().toISOString() } : task));
-    toast.success("Opgave markeret som klar");
-  }
-
-  async function snoozeAction(id: string) {
-    const snoozed = new Date(Date.now() + 24 * 3600_000).toISOString();
-    const { error } = await supabase.from("task_log").update({ snoozed_until: snoozed }).eq("id", id);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    setTasks((prev) => prev.map((task) => task.id === id ? { ...task, snoozed_until: snoozed } : task));
-    toast.success("Snoozet til i morgen");
-  }
-
-  async function createSuggestion(action: Omit<CareAction, "id">) {
-    if (!user) return;
-    const { data, error } = await supabase.from("task_log").insert(actionToTaskInsert(user.id, action)).select().single();
-    if (error || !data) {
-      toast.error(error?.message ?? "Kunne ikke oprette opgave");
-      return;
-    }
-    setTasks((prev) => [...prev, data as Task]);
-    toast.success("Tilføjet til plejeplanen");
-  }
-
-  async function createManySuggestions(nextActions: Omit<CareAction, "id">[]) {
-    if (!user || nextActions.length === 0) return;
-    const rows = nextActions.map((action) => actionToTaskInsert(user.id, action));
-    const { data, error } = await supabase.from("task_log").insert(rows).select();
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    setTasks((prev) => [...prev, ...((data ?? []) as Task[])]);
-    toast.success(`${rows.length} opgaver tilføjet`);
-  }
-
-  function openScanForZone(zoneId: string, mode: typeof scanMode = "bed_scan") {
-    setSelectedZoneId(zoneId);
-    setScanPlantId(null);
-    setScanMode(mode);
-    setViewPersist("scan");
-  }
-
-  function openScanForPlant(plantId: string, mode: typeof scanMode = "growth") {
-    const plant = plants.find((item) => item.id === plantId);
-    setSelectedPlantId(plantId);
-    setSelectedZoneId(plant?.zone_id ?? null);
-    setScanPlantId(plantId);
-    setScanMode(mode);
-    setViewPersist("scan");
-  }
-
-  async function followUpIssue(state: "open" | "watching" | "improving" | "resolved") {
-    if (!user || !garden || !selectedPlantId) return;
-    const plant = plants.find((item) => item.id === selectedPlantId);
-    if (!plant) return;
-    if (state === "resolved") {
-      const { error } = await supabase.from("garden_observations").insert({
-        user_id: user.id,
-        garden_id: garden.id,
-        zone_id: plant.zone_id,
-        plant_id: plant.id,
-        kind: "diagnosis",
-        caption: "Problem markeret som løst",
-        anchor: { garden_id: garden.id, zone_id: plant.zone_id, plant_id: plant.id, accuracy: "manual" } as Json,
-        ai_result: { severity: "low", resolution_state: "resolved", summary: "Problem markeret som løst" } as Json,
-        confidence: 0.8,
-      });
+    if (bed.id) {
+      const { error } = await supabase.from("garden_zones").update(payload).eq("id", bed.id);
       if (error) {
         toast.error(error.message);
         return;
       }
-      await supabase.from("task_log")
-        .update({ done: true, done_at: new Date().toISOString(), payload: { resolution_state: "resolved" } as Json })
-        .eq("plant_id", plant.id)
-        .in("kind", ["diagnose", "issue_resolution"]);
-      toast.success("Problemet er lukket");
-      await load();
+      setZones((prev) => prev.map((zone) => (zone.id === bed.id ? { ...zone, ...payload } : zone)));
+      toast.success("Bed opdateret");
       return;
     }
 
-    const title = state === "improving" ? "Følg bedring op" : "Følg sygdom eller skadedyr op";
-    await createSuggestion({
-      kind: "issue_resolution",
-      title,
-      reason: state === "improving" ? "Der er set bedring. Tag et kontrolfoto om få dage." : "Hold øje og tag et nyt foto for at lukke løkken.",
-      priority: state === "open" ? "high" : "normal",
-      due_at: new Date(Date.now() + 3 * 86400_000).toISOString(),
-      status: "open",
-      source: "scan",
-      confidence: 0.72,
+    const { data, error } = await supabase.from("garden_zones").insert({
+      ...payload,
+      user_id: user.id,
       garden_id: garden.id,
-      zone_id: plant.zone_id,
-      plant_id: plant.id,
-      payload: { resolution_state: state } as Json,
-    });
+    }).select("id,garden_id,name,type,area_m2,sun_exposure,soil").single();
+    if (error || !data) {
+      toast.error(error?.message ?? "Kunne ikke gemme bed");
+      return;
+    }
+    setZones((prev) => [...prev, data as ZoneRow]);
+    toast.success("Bed tilføjet");
   }
 
-  async function savePreferences(next: CompanionPreferencesState) {
-    if (!garden) return;
-    const preferencesJson = next as unknown as Json;
-    const { error } = await supabase.from("gardens").update({
-      preferences: preferencesJson,
-      updated_at: new Date().toISOString(),
-    }).eq("id", garden.id);
+  async function deleteBed(zone: ZoneRow) {
+    await supabase.from("watering_schedules").delete().eq("zone_id", zone.id);
+    await supabase.from("user_plants").delete().eq("zone_id", zone.id);
+    const { error } = await supabase.from("garden_zones").delete().eq("id", zone.id);
     if (error) {
       toast.error(error.message);
       return;
     }
-    setGarden((prev) => prev ? { ...prev, preferences: preferencesJson } as Garden : prev);
-    setGardens((prev) => prev.map((row) => row.id === garden.id ? { ...row, preferences: preferencesJson } as Garden : row));
-    toast.success("Driftsprofil gemt");
+    setZones((prev) => prev.filter((item) => item.id !== zone.id));
+    setSchedules((prev) => prev.filter((item) => item.zone_id !== zone.id));
+    setPlantsByZone((prev) => {
+      const next = { ...prev };
+      delete next[zone.id];
+      return next;
+    });
+    toast.success(`${zone.name} slettet`);
   }
 
-  async function generateCompanionActions(persist = false) {
-    if (!garden) return;
-    setGeneratingActions(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("generate-companion-actions", {
-        body: { garden_id: garden.id, persist },
-      });
-      if (error) throw error;
-      const rawActions = Array.isArray(data?.actions) ? data.actions : [];
-      const next = rawActions
-        .map((action) => normalizeSuggestion(garden.id, action))
-        .filter(Boolean) as Omit<CareAction, "id">[];
-      if (persist) {
-        await load();
-        toast.success(next.length ? "Kompagnonen lagde nye opgaver i planen" : "Ingen nye opgaver fundet");
-      } else {
-        setRemoteSuggestions(next);
-        toast.success(next.length ? "Nye forslag er hentet" : "Ingen nye forslag lige nu");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Kunne ikke hente AI-forslag");
-    } finally {
-      setGeneratingActions(false);
+  async function addPlants(zone: ZoneRow, items: { slug?: string; custom_name?: string; qty: number; meta?: { name_da?: string; water_need?: string | null; image_url?: string | null } }[]) {
+    if (!user || !garden) return;
+    const rows = items.map((item) => ({
+      user_id: user.id,
+      garden_id: garden.id,
+      zone_id: zone.id,
+      plant_slug: item.slug ?? null,
+      custom_name: item.custom_name ?? null,
+      qty: item.qty,
+    }));
+    const { data, error } = await supabase.from("user_plants").insert(rows).select("id,zone_id,plant_slug,custom_name,qty,planted_at,notes,image_url,plants_catalog(name_da,water_need,image_url)");
+    if (error) throw error;
+    setPlantsByZone((prev) => mergePlants(prev, groupPlants(data ?? [])));
+  }
+
+  async function addSchedule(zoneId: string) {
+    if (!user) return;
+    const { data, error } = await supabase.from("watering_schedules").insert({
+      user_id: user.id,
+      zone_id: zoneId,
+      name: "Vanding",
+      weekday_mask: 21,
+      start_time: "06:30:00",
+      duration_min: 15,
+      enabled: true,
+      ai_adjusted: true,
+    }).select("id,zone_id,name,weekday_mask,start_time,duration_min,enabled,ai_adjusted").single();
+    if (error || !data) {
+      toast.error(error?.message ?? "Kunne ikke oprette vanding");
+      return;
     }
+    setSchedules((prev) => [...prev, data as Schedule]);
+    switchView("water");
   }
 
-  async function movePlant(id: string, x: number, y: number) {
-    const patch = { normalized_x: x, normalized_y: y, accuracy: "manual" };
-    await supabase.from("user_plants").update({ map_position: patch }).eq("id", id);
-    setPlants((prev) => prev.map((p) => p.id === id ? { ...p, map_position: patch as Json } as Plant : p));
+  async function duplicateSchedule(schedule: Schedule) {
+    if (!user) return;
+    const { id: _id, ...rest } = schedule;
+    const { data, error } = await supabase.from("watering_schedules").insert({ ...rest, user_id: user.id, name: `${schedule.name} kopi` }).select("id,zone_id,name,weekday_mask,start_time,duration_min,enabled,ai_adjusted").single();
+    if (error || !data) {
+      toast.error(error?.message ?? "Kunne ikke kopiere vanding");
+      return;
+    }
+    setSchedules((prev) => [...prev, data as Schedule]);
   }
 
-  async function moveObservation(id: string, x: number, y: number) {
-    const current = observations.find((o) => o.id === id);
-    const next = { ...readAnchor(current?.anchor), normalized_x: x, normalized_y: y, accuracy: "manual" };
-    await supabase.from("garden_observations").update({ anchor: next }).eq("id", id);
-    setObservations((prev) => prev.map((o) => o.id === id ? { ...o, anchor: next as Json } as Observation : o));
+  async function updateSchedule(id: string, patch: Partial<Schedule>) {
+    setSchedules((prev) => prev.map((schedule) => (schedule.id === id ? { ...schedule, ...patch } : schedule)));
+    const { error } = await supabase.from("watering_schedules").update(patch).eq("id", id);
+    if (error) toast.error(error.message);
   }
 
-  async function moveDevice(id: string, x: number, y: number) {
-    const patch = { normalized_x: x, normalized_y: y, accuracy: "manual" };
-    await supabase.from("devices").update({ map_position: patch }).eq("id", id);
-    setDevices((prev) => prev.map((d) => d.id === id ? { ...d, map_position: patch as Json } as Device : d));
+  async function deleteSchedule(id: string) {
+    setSchedules((prev) => prev.filter((schedule) => schedule.id !== id));
+    const { error } = await supabase.from("watering_schedules").delete().eq("id", id);
+    if (error) toast.error(error.message);
   }
 
-  if (authLoading || (!user && !authLoading)) return null;
+  async function waterNow(zone: ZoneRow, minutes: number) {
+    if (!user) return;
+    const liters = litersForSession(zone, minutes);
+    const { data, error } = await supabase.from("watering_events").insert({
+      user_id: user.id,
+      zone_id: zone.id,
+      schedule_id: null,
+      scheduled_for: new Date().toISOString(),
+      ran_at: new Date().toISOString(),
+      weather_skipped: false,
+      reason: `Manuel · ${minutes} min`,
+      mm_delivered: Math.round((minutes / 15) * 5),
+    }).select("id,zone_id,scheduled_for,ran_at,weather_skipped,reason,mm_delivered").single();
+    if (error || !data) {
+      toast.error(error?.message ?? "Kunne ikke logge vanding");
+      return;
+    }
+    setEvents((prev) => [data as EventRow, ...prev]);
+    toast.success(`Vander ${zone.name} · cirka ${liters} L`);
+  }
 
-  if (loading) {
+  if (authLoading || loading) return null;
+
+  if (!user) {
     return (
       <>
         <AppNav active="companion" />
-        <div className="container companion-loading">Havekompagnonen vågner...</div>
-      </>
-    );
-  }
-
-  if (!garden || !user) {
-    return (
-      <>
-        <AppNav active="companion" />
-        <div className="container companion-empty-page">
-          <div className="companion-eyebrow">Havekompagnonen</div>
-          <h1>Start med at måle din have.</h1>
-          <p>Så kan vi placere bede, planter, fotos, sygdomme, sensorer og vandingszoner på et levende kort.</p>
-          <Link to="/havemaaler" className="btn btn-primary">Mål min have</Link>
-        </div>
+        <main className="container">
+          <header className="page-head">
+            <div className="eyebrow">Havekompagnon</div>
+            <h1>Log ind for at styre bede, planter og vanding.</h1>
+            <Link to="/login" className="btn btn-primary" style={{ marginTop: 24 }}>Log ind</Link>
+          </header>
+        </main>
         <SiteFooter />
       </>
     );
@@ -646,521 +295,445 @@ export default function GardenCompanion() {
   return (
     <>
       <AppNav active="companion" />
-      <div className="container companion-page">
-        <header className="companion-page-head">
+      <main className="container companion-simple">
+        <header className="page-head companion-simple-hero">
           <div>
-            <div className="companion-eyebrow">Havekompagnonen</div>
-            <h1>Din levende have på kort, kamera og plan.</h1>
-            <p>Scan planter, placer fotos, følg vækst, opdage sygdomme og lad smart vanding arbejde sammen med vejret.</p>
-          </div>
-          <div className="companion-page-actions">
-            <Link to={editMeasurementPath(garden.id)} className="btn btn-ghost btn-sm">
-              <Ruler size={14} /> Rediger måling
-            </Link>
-            {gardens.length > 1 && (
-              <div className="companion-garden-switch">
-                {gardens.map((g) => (
-                  <button key={g.id} className={g.id === garden.id ? "active" : ""} onClick={() => setActive(g.id)}>
-                    {g.name}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="eyebrow">Havekompagnon</div>
+            <h1>Bede, planter og vanding — ikke mere støj.</h1>
+            <p className="lede">En fokuseret arbejdsside til at oprette bede, holde styr på planterne og vande rigtigt.</p>
           </div>
         </header>
 
-        <ExperienceRail
-          view={view}
-          observations={observations.length}
-          zones={zones.length}
-          plants={plants.length}
-          actions={actions.filter((a) => a.status === "open").length}
-          devices={devices.length}
-          onSelect={setViewPersist}
-        />
-
-        <nav className="companion-primary-nav" aria-label="Havekompagnon hovedvisning">
-          {PRIMARY.map((item) => (
-            <button key={item.key} className={view === item.key ? "active" : ""} onClick={() => setViewPersist(item.key)}>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        {view === "today" && (
-          <>
-            <CompanionToday
-              garden={garden}
-              zones={zones}
-              plantCount={plants.reduce((sum, p) => sum + (p.qty || 1), 0)}
-              openActions={actions.filter((a) => a.status === "open")}
-              suggestions={suggestions}
-              forecast={forecasts[0] ?? null}
-              plannedL={summary.plannedL}
-              savedL={summary.savedL}
-              devices={devices}
-              observations={observations}
-              preferences={preferences}
-              healthScore={gardenHealth}
-              onScan={() => setViewPersist("scan")}
-              onMap={() => setViewPersist("map")}
-              onPlan={() => setViewPersist("plan")}
-              onDevices={() => setViewPersist("devices")}
-              onRound={() => setViewPersist("round")}
-              onCoach={() => setViewPersist("coach")}
-              onCompleteAction={completeAction}
-            />
-            <CompanionPreferences preferences={preferences} onChange={savePreferences} />
-            <MorningBriefing userId={user.id} />
-          </>
-        )}
-
-        {view === "round" && (
-          <GardenRound
-            userId={user.id}
-            garden={garden}
-            zones={zones}
-            observations={observations}
-            actions={actions}
-            onScanZone={openScanForZone}
-            onCompleteAction={completeAction}
-            onSaved={load}
-          />
-        )}
-
-        {view === "map" && (
-          <GardenMap
-            garden={garden}
-            zones={zones}
-            plants={plants}
-            observations={observations}
-            devices={devices}
-            zoneScores={zoneScores}
-            zoneInsights={zoneInsights}
-            selectedZoneId={selectedZoneId}
-            onSelectZone={setSelectedZoneId}
-            onSelectPlant={setSelectedPlantId}
-            onMovePlant={movePlant}
-            onMoveObservation={moveObservation}
-            onMoveDevice={moveDevice}
-          />
-        )}
-
-        {view === "scan" && (
-          <GardenCamera
-            userId={user.id}
-            garden={garden}
-            zones={zones}
-            plants={plants}
-            observations={observations}
-            defaultZoneId={selectedZoneId}
-            defaultPlantId={scanPlantId}
-            defaultMode={scanMode}
-            onSaved={load}
-          />
-        )}
-
-        {view === "plan" && (
-          <>
-            <SeasonPlan actions={seasonActions} onAdd={createSuggestion} onAddAll={() => createManySuggestions(seasonActions)} />
-            <CarePlan
-              actions={actions}
-              suggestions={suggestions}
-              zoneNames={zoneNames}
-              onComplete={completeAction}
-              onSnooze={snoozeAction}
-              onCreateSuggestion={createSuggestion}
-              onGenerateSuggestions={() => generateCompanionActions(false)}
-              generatingSuggestions={generatingActions}
-            />
-          </>
-        )}
-
-        <section className="companion-secondary">
-          <div className="companion-secondary-head">
-            <div>
-              <div className="companion-eyebrow">Dybdeværktøjer</div>
-              <h2>Alt det kraftige ligger stadig lige under overfladen.</h2>
-            </div>
-          </div>
-          <div className="companion-secondary-nav">
-            {SECONDARY.map(({ key, label, icon: Icon }) => (
-              <button key={key} className={view === key ? "active" : ""} onClick={() => setViewPersist(key)}>
-                <Icon size={15} /> {label}
+        {gardens.length > 1 && (
+          <div className="companion-garden-switcher" aria-label="Vælg aktiv have">
+            {gardens.map((item) => (
+              <button key={item.id} onClick={() => setActive(item.id)} className={item.id === garden?.id ? "active" : ""}>
+                {item.name}
               </button>
             ))}
           </div>
-
-          {view === "plants" && (
-            <>
-              <PlantInventory
-                plants={plants}
-                zones={zones}
-                plantScores={plantScores}
-                selectedPlantId={selectedPlantId}
-                onSelectPlant={setSelectedPlantId}
-                onScan={() => setViewPersist("scan")}
-              />
-            </>
-          )}
-          {view === "water" && (
-            <CalendarTimeline
-              schedules={schedules}
-              zones={zones}
-              forecasts={forecasts}
-              opts={{}}
-              onSnooze={() => toast.success("Vanding sprunget over for denne visning")}
-            />
-          )}
-          {view === "journal" && <JournalTab gardenId={garden.id} zones={zones} plantsByZone={plantsByZone} />}
-          {view === "devices" && (
-            <>
-              <SmartGardenPanel
-                userId={user.id}
-                gardenId={garden.id}
-                zones={zones}
-                devices={devices}
-                connections={connections}
-                readings={deviceReadings}
-                deviceActions={deviceActions}
-                preferences={preferences}
-                onRefresh={load}
-              />
-              <IoTTab gardenId={garden.id} zones={zones} />
-            </>
-          )}
-          {view === "coach" && (
-            <GardenCoach
-              garden={garden}
-              zones={zones}
-              plants={plants}
-              observations={observations}
-              openActions={actions.filter((action) => action.status === "open")}
-              preferences={preferences}
-              selectedZoneId={selectedZoneId}
-              selectedPlantId={selectedPlantId}
-              zoneInsights={zoneInsights}
-              gardenHealth={gardenHealth}
-            />
-          )}
-          {view === "yearwheel" && <CalendarTab gardenId={garden.id} zones={zones} plantsByZone={plantsByZone} catalogBySlug={catalogBySlug} />}
-          {view === "community" && <NeighborsTab />}
-          {view === "insights" && <InsightsTab events={events} zones={zones} />}
-        </section>
-
-        {selectedPlant && (
-          <PlantTimeline
-            plant={selectedPlant}
-            zoneName={zones.find((zone) => zone.id === selectedPlant.zone_id)?.name}
-            observations={observations}
-            healthLogs={healthLogs}
-            growthSnapshots={growthSnapshots}
-            tasks={tasks}
-            journal={journal}
-            healthScore={plantScores[selectedPlant.id]}
-            onScan={() => openScanForPlant(selectedPlant.id)}
-            onFollowUp={followUpIssue}
-          />
         )}
-      </div>
+
+        {!garden ? (
+          <section className="water-card companion-empty-state">
+            <Leaf size={36} />
+            <h2>Start med din første have</h2>
+            <p>Mål haven op, og kom tilbage for at styre bede, planter og vanding.</p>
+            <Link to="/havemaaler" className="btn btn-primary">Mål min have</Link>
+          </section>
+        ) : (
+          <>
+            <section className="companion-simple-stats" aria-label="Havekompagnon overblik">
+              <Stat icon={<Leaf size={18} />} label="Bede" value={zones.length} />
+              <Stat icon={<Sprout size={18} />} label="Planter" value={allPlants.reduce((sum, plant) => sum + plant.qty, 0)} />
+              <Stat icon={<Droplets size={18} />} label="Planlagt vand" value={`${summary.plannedL} L`} />
+              <Stat icon={<Droplets size={18} />} label="Sparet af vejr" value={`${summary.savedL} L`} />
+            </section>
+
+            <nav className="companion-simple-tabs" aria-label="Havekompagnon funktioner">
+              {VIEW_TABS.map(({ key, label, icon: Icon }) => (
+                <button key={key} onClick={() => switchView(key)} className={view === key ? "active" : ""}>
+                  <Icon size={16} /> {label}
+                </button>
+              ))}
+            </nav>
+
+            {view === "beds" && (
+              <BedsView
+                zones={zones}
+                plantsByZone={plantsByZone}
+                schedules={schedules}
+                onAddBed={() => { setEditingBed(undefined); setBedOpen(true); }}
+                onEditBed={(zone) => { setEditingBed(toBedDraft(zone)); setBedOpen(true); }}
+                onDeleteBed={deleteBed}
+                onAddPlants={setAddPlantsZone}
+                onIdentify={setIdentifyZone}
+                onAddSchedule={addSchedule}
+                onWaterNow={setQuickWaterZone}
+              />
+            )}
+
+            {view === "plants" && (
+              <PlantsView
+                zones={zones}
+                plantsByZone={plantsByZone}
+                onAddPlants={setAddPlantsZone}
+                onIdentify={setIdentifyZone}
+                onOpenPlant={(plant, zone) => setOpenPlant({ plant, zone })}
+              />
+            )}
+
+            {view === "water" && (
+              <WaterView
+                zones={zones}
+                schedules={schedules}
+                forecasts={forecasts}
+                last48={last48}
+                nextRun={nextRun}
+                events={events}
+                plantsByZone={plantsByZone}
+                onAddSchedule={addSchedule}
+                onUpdateSchedule={updateSchedule}
+                onDeleteSchedule={deleteSchedule}
+                onDuplicateSchedule={duplicateSchedule}
+                onWaterNow={setQuickWaterZone}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      <AddBedDialog open={bedOpen} onOpenChange={setBedOpen} initial={editingBed} onSave={saveBed} />
+      <AddPlantsDialog
+        open={!!addPlantsZone}
+        onOpenChange={(open) => !open && setAddPlantsZone(null)}
+        zoneName={addPlantsZone?.name ?? "bed"}
+        zoneSun={addPlantsZone?.sun_exposure}
+        onAdd={(items) => addPlants(addPlantsZone!, items)}
+      />
+      <IdentifyPlantDialog
+        open={!!identifyZone}
+        onOpenChange={(open) => !open && setIdentifyZone(null)}
+        zones={zones}
+        defaultZoneId={identifyZone?.id}
+        onAdded={(plant) => setPlantsByZone((prev) => mergePlants(prev, { [plant.zone_id]: [plant as ZonePlant] }))}
+      />
+      <QuickWaterDialog
+        open={!!quickWaterZone}
+        onOpenChange={(open) => !open && setQuickWaterZone(null)}
+        zone={quickWaterZone}
+        plantNames={(quickWaterZone ? plantsByZone[quickWaterZone.id] ?? [] : []).map(plantName)}
+        onConfirm={(minutes) => waterNow(quickWaterZone!, minutes)}
+      />
+      <PlantDetailSheet
+        plant={openPlant?.plant ?? null}
+        zoneName={openPlant?.zone.name ?? ""}
+        zone={openPlant?.zone ?? null}
+        zones={zones}
+        bedPlants={openPlant ? plantsByZone[openPlant.zone.id] ?? [] : []}
+        onOpenChange={(open) => !open && setOpenPlant(null)}
+        onUpdated={(id, patch) => setPlantsByZone((prev) => updatePlant(prev, id, patch))}
+        onRemoved={(id) => setPlantsByZone((prev) => removePlant(prev, id))}
+        onMoved={(id, newZoneId) => {
+          if (!openPlant) return;
+          setPlantsByZone((prev) => movePlant(prev, id, openPlant.zone.id, newZoneId));
+        }}
+      />
       <SiteFooter />
     </>
   );
 }
 
-const SMART_PROVIDERS = [
-  { kind: "sensor", provider: "soil-moisture", name: "Fugtsensorer", icon: Gauge, text: "Jordfugt og temperatur pr. zone." },
-  { kind: "irrigation", provider: "smart-valves", name: "Smart ventiler", icon: Droplets, text: "Klargør godkendte vandingshandlinger." },
-  { kind: "greenhouse", provider: "greenhouse-climate", name: "Drivhus klima", icon: Radio, text: "Luftfugt, varme og ventilation." },
-  { kind: "weather", provider: "local-weather", name: "Lokal vejrstation", icon: CloudSun, text: "Mere præcise regn- og vindsignaler." },
-  { kind: "mower", provider: "robot-mower", name: "Robotplæneklipper", icon: PlugZap, text: "Plænestatus og vedligeholdelsesvinduer." },
-] as const;
-
-function ExperienceRail({
-  view,
-  observations,
+function BedsView({
   zones,
-  plants,
-  actions,
-  devices,
-  onSelect,
+  plantsByZone,
+  schedules,
+  onAddBed,
+  onEditBed,
+  onDeleteBed,
+  onAddPlants,
+  onIdentify,
+  onAddSchedule,
+  onWaterNow,
 }: {
-  view: View;
-  observations: number;
-  zones: number;
-  plants: number;
-  actions: number;
-  devices: number;
-  onSelect: (view: View) => void;
+  zones: ZoneRow[];
+  plantsByZone: Record<string, ZonePlant[]>;
+  schedules: Schedule[];
+  onAddBed: () => void;
+  onEditBed: (zone: ZoneRow) => void;
+  onDeleteBed: (zone: ZoneRow) => void;
+  onAddPlants: (zone: ZoneRow) => void;
+  onIdentify: (zone: ZoneRow) => void;
+  onAddSchedule: (zoneId: string) => void;
+  onWaterNow: (zone: ZoneRow) => void;
 }) {
-  const steps = [
-    { key: "scan", label: "Foto", value: observations, target: 4, icon: Camera },
-    { key: "map", label: "Kort", value: zones + plants, target: 8, icon: MapPin },
-    { key: "plan", label: "Plan", value: actions, target: 3, icon: CheckCircle2 },
-    { key: "devices", label: "Smart", value: devices, target: 2, icon: Radio },
-  ] as const;
+  if (zones.length === 0) {
+    return (
+      <section className="water-card companion-empty-state">
+        <Leaf size={36} />
+        <h2>Ingen bede endnu</h2>
+        <p>Opret et bed for at tilføje planter og vanding.</p>
+        <Button onClick={onAddBed}><Plus size={16} className="mr-1.5" />Tilføj bed</Button>
+      </section>
+    );
+  }
 
   return (
-    <section className="companion-experience-rail" aria-label="Havekompagnon status">
-      {steps.map((step) => {
-        const Icon = step.icon;
-        const progress = Math.min(100, Math.round((step.value / step.target) * 100));
+    <section className="companion-simple-grid">
+      <button className="companion-add-card" onClick={onAddBed}>
+        <Plus size={22} />
+        <strong>Tilføj bed</strong>
+        <span>Navn, areal, sol og jord.</span>
+      </button>
+      {zones.map((zone) => {
+        const plants = plantsByZone[zone.id] ?? [];
+        const zoneSchedules = schedules.filter((schedule) => schedule.zone_id === zone.id);
         return (
-          <button key={step.key} className={view === step.key ? "active" : ""} onClick={() => onSelect(step.key)}>
-            <span className="companion-rail-icon"><Icon size={16} /></span>
-            <span>
-              <strong>{step.label}</strong>
-              <small>{step.value}</small>
-            </span>
-            <i><b style={{ width: `${progress}%` }} /></i>
-          </button>
+          <article key={zone.id} className="water-card companion-bed-card">
+            <div className="companion-bed-card-head">
+              <div>
+                <h2>{zone.name}</h2>
+                <p>{zone.area_m2 ?? 0} m² · {readableSun(zone.sun_exposure)} · {readableSoil(zone.soil)}</p>
+              </div>
+              <div className="companion-icon-actions">
+                <button onClick={() => onEditBed(zone)} aria-label={`Rediger ${zone.name}`}><Pencil size={14} /></button>
+                <button onClick={() => onDeleteBed(zone)} aria-label={`Slet ${zone.name}`}><Trash2 size={14} /></button>
+              </div>
+            </div>
+            <div className="companion-bed-metrics">
+              <span><Sprout size={14} /> {plants.reduce((sum, plant) => sum + plant.qty, 0)} planter</span>
+              <span><Droplets size={14} /> {zoneSchedules.length || "Ingen"} timer</span>
+            </div>
+            <div className="companion-plant-chips">
+              {plants.slice(0, 5).map((plant) => <span key={plant.id}>{plantName(plant)}</span>)}
+              {plants.length > 5 && <span>+{plants.length - 5}</span>}
+              {plants.length === 0 && <em>Ingen planter endnu</em>}
+            </div>
+            <div className="companion-card-actions">
+              <Button variant="outline" size="sm" onClick={() => onAddPlants(zone)}><Plus size={14} className="mr-1.5" />Planter</Button>
+              <Button variant="outline" size="sm" onClick={() => onIdentify(zone)}><Camera size={14} className="mr-1.5" />Scan</Button>
+              <Button variant="outline" size="sm" onClick={() => onAddSchedule(zone.id)}><Droplets size={14} className="mr-1.5" />Timer</Button>
+              <Button size="sm" onClick={() => onWaterNow(zone)}>Vand nu</Button>
+            </div>
+          </article>
         );
       })}
     </section>
   );
 }
 
-function zoneName(zones: Pick<Zone, "id" | "name">[], zoneId?: string | null) {
-  if (!zoneId) return "Hele haven";
-  return zones.find((zone) => zone.id === zoneId)?.name ?? "Zone";
-}
-
-function deviceZone(device: Device) {
-  const metadata = device.metadata && typeof device.metadata === "object" ? device.metadata as Record<string, unknown> : {};
-  return typeof metadata.zone_id === "string" ? metadata.zone_id : null;
-}
-
-function actionStatus(status: string) {
-  if (status === "approved") return "Godkendt";
-  if (status === "executed") return "Udført";
-  if (status === "cancelled") return "Annulleret";
-  return "Afventer";
-}
-
-function SmartGardenPanel({
-  userId,
-  gardenId,
+function PlantsView({
   zones,
-  devices,
-  connections,
-  readings,
-  deviceActions,
-  preferences,
-  onRefresh,
+  plantsByZone,
+  onAddPlants,
+  onIdentify,
+  onOpenPlant,
 }: {
-  userId: string;
-  gardenId: string;
-  zones: Zone[];
-  devices: Device[];
-  connections: IntegrationConnection[];
-  readings: DeviceReading[];
-  deviceActions: DeviceAction[];
-  preferences: CompanionPreferencesState;
-  onRefresh: () => void;
+  zones: ZoneRow[];
+  plantsByZone: Record<string, ZonePlant[]>;
+  onAddPlants: (zone: ZoneRow) => void;
+  onIdentify: (zone: ZoneRow) => void;
+  onOpenPlant: (plant: ZonePlant, zone: ZoneRow) => void;
 }) {
-  async function connect(provider: typeof SMART_PROVIDERS[number]) {
-    const existing = connections.find((row) => row.provider === provider.provider && row.kind === provider.kind);
-    if (existing) {
-      const { error } = await supabase.from("integration_connections").update({
-        status: "planned",
-        updated_at: new Date().toISOString(),
-      }).eq("id", existing.id);
-      if (error) toast.error(error.message);
-      else toast.success("Integration markeret til opsætning");
-      onRefresh();
-      return;
-    }
-
-    const { error } = await supabase.from("integration_connections").insert({
-      user_id: userId,
-      garden_id: gardenId,
-      kind: provider.kind,
-      provider: provider.provider,
-      display_name: provider.name,
-      status: "planned",
-      settings: { requested_from: "havekompagnon" } as Json,
-    });
-    if (error) toast.error(error.message);
-    else toast.success("Integration lagt klar");
-    onRefresh();
+  if (zones.length === 0) {
+    return <section className="water-card companion-empty-state"><Sprout size={36} /><h2>Opret et bed først</h2><p>Planter bor i bede, så start der.</p></section>;
   }
-
-  async function toggleDeviceAutopilot(device: Device) {
-    if (!preferences.device_autopilot_confirmed && !device.autopilot_enabled) {
-      toast.error("Bekræft enheds-autopilot i driftsprofilen først");
-      return;
-    }
-    const { error } = await supabase.from("devices").update({ autopilot_enabled: !device.autopilot_enabled }).eq("id", device.id);
-    if (error) toast.error(error.message);
-    else toast.success(device.autopilot_enabled ? "Enheds-autopilot slået fra" : "Enheds-autopilot slået til");
-    onRefresh();
-  }
-
-  async function updateAction(action: DeviceAction, status: "approved" | "cancelled") {
-    const { error } = await supabase.from("device_actions").update({
-      status,
-      approved_at: status === "approved" ? new Date().toISOString() : action.approved_at,
-    }).eq("id", action.id);
-    if (error) toast.error(error.message);
-    else toast.success(status === "approved" ? "Device-handling godkendt" : "Device-handling annulleret");
-    onRefresh();
-  }
-
-  const pendingActions = deviceActions.filter((action) => action.status === "pending" || action.status === "requested").slice(0, 5);
-  const latestReadings = readings.slice(0, 8);
 
   return (
-    <div className="companion-integrations">
-      <section className="companion-band">
-        <div className="companion-section-head">
-          <div>
-            <div className="companion-eyebrow">Smart have</div>
-            <h2>Sensorer, ventiler og lokale signaler kobles til kortet.</h2>
-          </div>
-          <div className="companion-plan-count">
-            <Radio size={15} /> {connections.length} forbindelser
-          </div>
-        </div>
-
-        <div className="companion-provider-grid">
-          {SMART_PROVIDERS.map((provider) => {
-            const Icon = provider.icon;
-            const connection = connections.find((row) => row.provider === provider.provider && row.kind === provider.kind);
-            return (
-              <article key={provider.provider} className="companion-provider">
-                <div className="companion-provider-icon"><Icon size={17} /></div>
-                <div>
-                  <h3>{provider.name}</h3>
-                  <p>{provider.text}</p>
-                  <small>{connection ? `Status: ${connection.status}` : "Ikke forbundet"}</small>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => connect(provider)}>
-                  {connection ? "Klargør igen" : "Klargør"}
-                </Button>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="companion-smart-grid">
-        <article className="companion-band">
-          <div className="companion-section-head">
-            <div>
-              <div className="companion-eyebrow">Enheder på kortet</div>
-              <h2>Autopilot er opt-in pr. enhed.</h2>
-            </div>
-          </div>
-          {devices.length === 0 ? (
-            <div className="companion-empty"><Radio size={18} /> Ingen enheder endnu.</div>
-          ) : (
-            <div className="companion-device-list">
-              {devices.map((device) => (
-                <div key={device.id} className="companion-device-row">
-                  <div>
-                    <strong>{device.name}</strong>
-                    <span>{device.kind} · {zoneName(zones, deviceZone(device))} · {device.status}</span>
-                  </div>
-                  <button className={device.autopilot_enabled ? "active" : ""} onClick={() => toggleDeviceAutopilot(device)}>
-                    {device.autopilot_enabled ? "Autopilot" : "Manual"}
-                  </button>
-                </div>
+    <section className="companion-plant-list">
+      {zones.map((zone) => {
+        const plants = plantsByZone[zone.id] ?? [];
+        return (
+          <article key={zone.id} className="water-card companion-zone-plants">
+            <header>
+              <div>
+                <h2>{zone.name}</h2>
+                <p>{plants.reduce((sum, plant) => sum + plant.qty, 0)} planter</p>
+              </div>
+              <div className="companion-card-actions">
+                <Button variant="outline" size="sm" onClick={() => onIdentify(zone)}><Camera size={14} className="mr-1.5" />Scan</Button>
+                <Button size="sm" onClick={() => onAddPlants(zone)}><Plus size={14} className="mr-1.5" />Tilføj</Button>
+              </div>
+            </header>
+            <div className="companion-plant-rows">
+              {plants.map((plant) => (
+                <button key={plant.id} onClick={() => onOpenPlant(plant, zone)}>
+                  <span>{plantName(plant)}</span>
+                  <small>{plant.qty} stk · {readableWaterNeed(plant.water_need)}</small>
+                </button>
               ))}
+              {plants.length === 0 && <p>Tilføj manuelt eller scan en plante med kameraet.</p>}
             </div>
-          )}
-        </article>
-
-        <article className="companion-band">
-          <div className="companion-section-head">
-            <div>
-              <div className="companion-eyebrow">Målinger</div>
-              <h2>Seneste signaler der påvirker anbefalinger.</h2>
-            </div>
-          </div>
-          {latestReadings.length === 0 ? (
-            <div className="companion-empty"><Gauge size={18} /> Ingen sensorhistorik endnu.</div>
-          ) : (
-            <div className="companion-reading-list">
-              {latestReadings.map((reading) => (
-                <div key={reading.id}>
-                  <strong>{reading.kind}</strong>
-                  <span>{reading.value ?? "-"}{reading.unit ? ` ${reading.unit}` : ""}</span>
-                  <small>{zoneName(zones, reading.zone_id)} · {new Date(reading.observed_at).toLocaleDateString("da-DK")}</small>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
-      </section>
-
-      <section className="companion-band">
-        <div className="companion-section-head">
-          <div>
-            <div className="companion-eyebrow">Device-handlinger</div>
-            <h2>Ventiler og fysiske handlinger kræver tydelig godkendelse.</h2>
-          </div>
-          <ShieldCheck size={18} />
-        </div>
-        {pendingActions.length === 0 ? (
-          <div className="companion-empty"><CheckCircle2 size={18} /> Ingen afventende device-handlinger.</div>
-        ) : (
-          <div className="companion-device-actions">
-            {pendingActions.map((action) => (
-              <article key={action.id}>
-                <div>
-                  <span>{actionStatus(action.status)}</span>
-                  <h3>{action.action}</h3>
-                  {action.reason && <p>{action.reason}</p>}
-                  <small>{zoneName(zones, action.zone_id)}</small>
-                </div>
-                <div className="companion-task-actions">
-                  <Button variant="outline" size="sm" onClick={() => updateAction(action, "cancelled")}><XCircle size={14} className="mr-1.5" /> Nej</Button>
-                  <Button size="sm" onClick={() => updateAction(action, "approved")}><CheckCircle2 size={14} className="mr-1.5" /> Godkend</Button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+          </article>
+        );
+      })}
+    </section>
   );
 }
 
-function PlantInventory({
-  plants,
+function WaterView({
   zones,
-  plantScores,
-  selectedPlantId,
-  onSelectPlant,
-  onScan,
+  schedules,
+  forecasts,
+  last48,
+  nextRun,
+  events,
+  plantsByZone,
+  onAddSchedule,
+  onUpdateSchedule,
+  onDeleteSchedule,
+  onDuplicateSchedule,
+  onWaterNow,
 }: {
-  plants: Plant[];
-  zones: Zone[];
-  plantScores: Record<string, ReturnType<typeof computeHealthScore>>;
-  selectedPlantId: string | null;
-  onSelectPlant: (plantId: string) => void;
-  onScan: () => void;
+  zones: ZoneRow[];
+  schedules: Schedule[];
+  forecasts: Forecast[];
+  last48: number;
+  nextRun: { at: Date; schedule: Schedule; zone: ZoneRow } | null;
+  events: EventRow[];
+  plantsByZone: Record<string, ZonePlant[]>;
+  onAddSchedule: (zoneId: string) => void;
+  onUpdateSchedule: (id: string, patch: Partial<Schedule>) => void;
+  onDeleteSchedule: (id: string) => void;
+  onDuplicateSchedule: (schedule: Schedule) => void;
+  onWaterNow: (zone: ZoneRow) => void;
 }) {
-  if (plants.length === 0) {
-    return (
-      <div className="companion-band companion-empty">
-        <Leaf size={20} />
-        Ingen planter endnu. Brug Scan til at identificere og placere den første plante.
-        <Button onClick={onScan}>Scan plante</Button>
+  if (zones.length === 0) {
+    return <section className="water-card companion-empty-state"><Droplets size={36} /><h2>Ingen vanding uden bede</h2><p>Opret et bed for at lave en vandingsplan.</p></section>;
+  }
+
+  return (
+    <section className="companion-water-layout">
+      <div className="water-card companion-next-water">
+        <div className="eyebrow">Næste vanding</div>
+        <h2>{nextRun ? `${nextRun.zone.name} · ${nextRun.at.toLocaleString("da-DK", { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "Ingen timer planlagt"}</h2>
+        <p>{forecasts.find((item) => item.date === todayKey()) ? `I dag: ${forecasts.find((item) => item.date === todayKey())?.precip_mm.toFixed(1)} mm regn` : "Tilføj en timer eller vand manuelt."}</p>
       </div>
-    );
-  }
-  return (
-    <div className="companion-plant-grid">
-      {plants.map((plant) => (
-        <button key={plant.id} className={`companion-plant-card ${selectedPlantId === plant.id ? "active" : ""}`} onClick={() => onSelectPlant(plant.id)}>
-          {plant.image_url ? <img src={plant.image_url} alt="" /> : <div className="companion-plant-fallback"><Sprout size={20} /></div>}
-          <div>
-            <h3>{plant.custom_name || plant.plants_catalog?.name_da || plant.plant_slug || "Plante"}</h3>
-            <p>{zones.find((z) => z.id === plant.zone_id)?.name ?? "Ikke placeret"} · {plant.health_status || "ukendt helbred"} · {plantScores[plant.id]?.score ?? "-"} / 100</p>
+
+      <div className="companion-water-zones">
+        {zones.map((zone) => {
+          const zoneSchedules = schedules.filter((schedule) => schedule.zone_id === zone.id);
+          return (
+            <article key={zone.id} className="water-card companion-water-zone">
+              <header>
+                <div>
+                  <h2>{zone.name}</h2>
+                  <p>{(plantsByZone[zone.id] ?? []).map(plantName).slice(0, 4).join(", ") || "Ingen planter"}</p>
+                </div>
+                <div className="companion-card-actions">
+                  <Button variant="outline" size="sm" onClick={() => onAddSchedule(zone.id)}><Plus size={14} className="mr-1.5" />Timer</Button>
+                  <Button size="sm" onClick={() => onWaterNow(zone)}>Vand nu</Button>
+                </div>
+              </header>
+              <div className="companion-schedule-list">
+                {zoneSchedules.map((schedule) => {
+                  const next = upcomingOccurrences(schedule, 7)[0];
+                  const decision = next ? decide(schedule, zone, next, forecasts, last48) : null;
+                  return (
+                    <ScheduleRow
+                      key={schedule.id}
+                      s={schedule}
+                      decision={decision}
+                      nextLabel={next ? `Næste: ${next.toLocaleDateString("da-DK", { weekday: "short", day: "numeric", month: "short" })}` : undefined}
+                      onChange={(patch) => onUpdateSchedule(schedule.id, patch)}
+                      onDelete={() => onDeleteSchedule(schedule.id)}
+                      onDuplicate={() => onDuplicateSchedule(schedule)}
+                    />
+                  );
+                })}
+                {zoneSchedules.length === 0 && <p>Ingen timer endnu. Tilføj en enkel plan for dette bed.</p>}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <aside className="water-card companion-water-history">
+        <h2>Seneste vanding</h2>
+        {events.slice(0, 6).map((event) => (
+          <div key={event.id}>
+            <strong>{zones.find((zone) => zone.id === event.zone_id)?.name ?? "Bed"}</strong>
+            <span>{new Date(event.scheduled_for).toLocaleDateString("da-DK")} · {event.reason ?? "Vanding"}</span>
           </div>
-        </button>
-      ))}
+        ))}
+        {events.length === 0 && <p>Ingen vanding logget endnu.</p>}
+      </aside>
+    </section>
+  );
+}
+
+function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) {
+  return (
+    <div className="water-card companion-simple-stat">
+      {icon}
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
+}
+
+function groupPlants(rows: unknown[]) {
+  const map: Record<string, ZonePlant[]> = {};
+  rows.forEach((row) => {
+    const plant = row as {
+      id: string;
+      zone_id: string | null;
+      plant_slug: string | null;
+      custom_name: string | null;
+      qty: number;
+      planted_at?: string | null;
+      notes?: string | null;
+      image_url?: string | null;
+      plants_catalog?: { name_da: string | null; water_need: string | null; image_url: string | null } | null;
+    };
+    if (!plant.zone_id) return;
+    (map[plant.zone_id] ||= []).push({
+      id: plant.id,
+      zone_id: plant.zone_id,
+      plant_slug: plant.plant_slug,
+      custom_name: plant.custom_name,
+      qty: plant.qty,
+      planted_at: plant.planted_at ?? null,
+      notes: plant.notes ?? null,
+      image_url: plant.image_url ?? plant.plants_catalog?.image_url ?? null,
+      name_da: plant.plants_catalog?.name_da ?? undefined,
+      water_need: plant.plants_catalog?.water_need ?? null,
+    });
+  });
+  return map;
+}
+
+function mergePlants(current: Record<string, ZonePlant[]>, nextPlants: Record<string, ZonePlant[]>) {
+  const next = { ...current };
+  for (const [zoneId, plants] of Object.entries(nextPlants)) next[zoneId] = [...(next[zoneId] ?? []), ...plants];
+  return next;
+}
+
+function updatePlant(current: Record<string, ZonePlant[]>, id: string, patch: Partial<ZonePlant>) {
+  const next: Record<string, ZonePlant[]> = {};
+  for (const [zoneId, plants] of Object.entries(current)) next[zoneId] = plants.map((plant) => (plant.id === id ? { ...plant, ...patch } : plant));
+  return next;
+}
+
+function removePlant(current: Record<string, ZonePlant[]>, id: string) {
+  const next: Record<string, ZonePlant[]> = {};
+  for (const [zoneId, plants] of Object.entries(current)) next[zoneId] = plants.filter((plant) => plant.id !== id);
+  return next;
+}
+
+function movePlant(current: Record<string, ZonePlant[]>, id: string, fromZoneId: string, toZoneId: string) {
+  const plant = current[fromZoneId]?.find((item) => item.id === id);
+  if (!plant) return current;
+  const next = removePlant(current, id);
+  next[toZoneId] = [...(next[toZoneId] ?? []), { ...plant, zone_id: toZoneId }];
+  return next;
+}
+
+function toBedDraft(zone: ZoneRow): BedDraft {
+  return {
+    id: zone.id,
+    name: zone.name,
+    type: zone.type,
+    area_m2: zone.area_m2 ?? 10,
+    sun_exposure: zone.sun_exposure ?? "sun",
+    soil: zone.soil ?? "loam",
+  };
+}
+
+function readableSun(value?: string | null) {
+  if (value === "shade") return "skygge";
+  if (value === "part") return "delvis sol";
+  return "sol";
+}
+
+function readableSoil(value?: string | null) {
+  if (value === "sand") return "sandet";
+  if (value === "clay") return "leret";
+  return "muldet";
+}
+
+function readableWaterNeed(value?: string | null) {
+  if (value === "high") return "højt vandbehov";
+  if (value === "low") return "lavt vandbehov";
+  return "middel vandbehov";
 }
