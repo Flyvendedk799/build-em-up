@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   Bird,
@@ -23,11 +23,14 @@ import {
   type WildlifeZone,
 } from "@/lib/wildlife";
 
-type FocusKey = "all" | "pollinators" | "butterflies" | "helpers" | "birds" | "water";
+export type FocusKey = "all" | "pollinators" | "butterflies" | "helpers" | "birds" | "water";
 
 type Props = {
   zones: WildlifeZone[];
   plantsByZone: Record<string, WildlifePlant[]>;
+  /** Optional external focus (e.g. driven by the 3D habitat hero). Syncs the
+   *  analysis filter when it changes, while local focus buttons keep working. */
+  focus?: FocusKey;
 };
 
 const FOCUS_OPTIONS: {
@@ -104,11 +107,17 @@ const GAP_IMPACT: Record<string, number> = {
   nesting: 4,
 };
 
-export default function WildlifeTab({ zones, plantsByZone }: Props) {
-  const [focus, setFocus] = useState<FocusKey>("all");
+export default function WildlifeTab({ zones, plantsByZone, focus: externalFocus }: Props) {
+  const [focus, setFocus] = useState<FocusKey>(externalFocus ?? "all");
   const [selectedMixKey, setSelectedMixKey] = useState<string | null>(null);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [plannedKeys, setPlannedKeys] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    if (externalFocus) {
+      setFocus(externalFocus);
+      setSelectedMixKey(null);
+    }
+  }, [externalFocus]);
   const profile = useMemo(() => buildWildlifeProfile(zones, plantsByZone), [zones, plantsByZone]);
   const focusConfig = FOCUS_OPTIONS.find((option) => option.key === focus) ?? FOCUS_OPTIONS[0];
   const shownResidents = focus === "all"
