@@ -2156,6 +2156,19 @@
   max-width: 960px;
 }
 
+/* Interactive 3D wildlife habitat module. */
+.wildlife-3d-section {
+  margin: 8px 0 18px;
+}
+
+.wildlife-3d-section .wl3d,
+.wildlife-3d-section .wl3d-skeleton,
+.wildlife-3d-section .wl3d-fallback {
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .companion-simple-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 340px);

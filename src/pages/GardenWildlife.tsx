@@ -1,14 +1,76 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Leaf, MapPin, PawPrint, Ruler, Sprout } from "lucide-react";
 import { AppNav, SiteFooter } from "@/components/layout/SiteChrome";
-import WildlifeTab from "@/components/companion/WildlifeTab";
+import WildlifeTab, { type FocusKey } from "@/components/companion/WildlifeTab";
+import type { WildlifeHabitat, WildlifeHabitat3DMode } from "@/components/companion/WildlifeHabitat3D";
 import type { ZonePlant } from "@/components/watering/PlantChips";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
+import { buildWildlifeProfile, type WildlifeProfile } from "@/lib/wildlife";
 import { useActiveGarden } from "@/lib/activeGarden";
 import { useAuth } from "@/lib/auth";
 import "@/styles/companion.css";
+
+const WildlifeHabitat3D = lazy(() => import("@/components/companion/WildlifeHabitat3D"));
+
+const MODE_TO_FOCUS: Record<WildlifeHabitat3DMode, FocusKey> = {
+  overview: "all",
+  pollinators: "pollinators",
+  birds: "birds",
+  smallAnimals: "helpers",
+  waterLife: "water",
+};
+
+const GAP_IMPACT: Record<string, number> = { early: 8, late: 8, host: 9, water: 6, birds: 5, nesting: 4 };
+
+const strengthFromCount = (count: number): WildlifeHabitat["strength"] =>
+  count >= 3 ? "strong" : count >= 2 ? "good" : count >= 1 ? "weak" : "missing";
+
+/** Map the Dyreliv profile (score, checks, gaps) into the 8 habitat zones the
+ *  3D diorama renders. Strengths come from the real food/structure/water checks;
+ *  actions come from the profile's prioritised gaps. */
+function buildHabitats(profile: WildlifeProfile, zoneCount: number): WildlifeHabitat[] {
+  const met = (key: string) => profile.checks.find((c) => c.key === key)?.met ?? false;
+  const gap = (key: string) => profile.gaps.find((g) => g.key === key);
+  const nectar = ["early", "summer", "late"].filter(met).length;
+  const hasHost = met("host");
+  const hasStructure = met("structure");
+  const hasWater = met("water");
+
+  const action = (key: string, fallback: { title: string; impact: number }): WildlifeHabitat["action"] => {
+    const g = gap(key);
+    if (g) return { title: g.title, impact: GAP_IMPACT[key] ?? 5, plants: g.plants?.slice(0, 3) };
+    return fallback;
+  };
+
+  return [
+    { id: "flowers", name: "Blomstereng", kind: "flowers", strength: strengthFromCount(nectar),
+      supports: ["wildBees", "butterflies", "beneficialInsects"],
+      action: action(gap("early") ? "early" : "late", { title: "Hold blomstring hele sæsonen", impact: 6 }) },
+    { id: "shrubs", name: "Bær & buske", kind: "shrubs", strength: gap("birds") ? "missing" : hasStructure ? "strong" : "good",
+      supports: ["birds", "wildBees", "butterflies"],
+      action: action("birds", { title: "Bevar bær og tæt løv", impact: 6 }) },
+    { id: "trees", name: "Træer", kind: "trees", strength: hasStructure ? "good" : gap("birds") ? "missing" : "weak",
+      supports: ["birds", "wildBees", "beneficialInsects"],
+      action: { title: "Bevar gamle træer og bark", impact: 6 } },
+    { id: "water", name: "Vand", kind: "water", strength: hasWater ? "good" : "missing",
+      supports: ["frogs", "wildBees", "butterflies"],
+      action: action("water", { title: "Hold vandet rent og lavt", impact: 5 }) },
+    { id: "deadwood", name: "Dødt ved", kind: "deadwood", strength: hasHost ? "good" : hasStructure ? "weak" : "missing",
+      supports: ["hedgehogs", "beneficialInsects", "birds"],
+      action: { title: "Lad dødt ved ligge", impact: 10 } },
+    { id: "stone", name: "Sten & grus", kind: "stone", strength: gap("nesting") ? "missing" : "good",
+      supports: ["hedgehogs", "frogs", "beneficialInsects"],
+      action: action("nesting", { title: "Tilføj sten og grus", impact: 9 }) },
+    { id: "leafLitter", name: "Løvbunke", kind: "leafLitter", strength: hasHost ? "good" : "weak",
+      supports: ["hedgehogs", "beneficialInsects", "frogs"],
+      action: action("host", { title: "Gem efterårsløv", impact: 7 }) },
+    { id: "corridor", name: "Vildtkorridor", kind: "corridor", strength: zoneCount >= 3 ? "weak" : "missing",
+      supports: ["hedgehogs"],
+      action: { title: "Lav hul i hæk", impact: 11 } },
+  ];
+}
 
 type Garden = Tables<"gardens">;
 type Zone = Tables<"garden_zones">;
@@ -25,6 +87,8 @@ export default function GardenWildlife() {
   const [garden, setGarden] = useState<Garden | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [plants, setPlants] = useState<Plant[]>([]);
+  const [mode, setMode] = useState<WildlifeHabitat3DMode>("overview");
+  const [selectedHabitatId, setSelectedHabitatId] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "Dyreliv - Havekongen";
@@ -95,6 +159,9 @@ export default function GardenWildlife() {
 
   const totalPlants = useMemo(() => plants.reduce((sum, plant) => sum + (plant.qty || 1), 0), [plants]);
 
+  const profile = useMemo(() => buildWildlifeProfile(zones, plantsByZone), [zones, plantsByZone]);
+  const habitats = useMemo(() => buildHabitats(profile, zones.length), [profile, zones.length]);
+
   if (authLoading || (!user && !authLoading)) return null;
 
   if (loading) {
@@ -160,7 +227,28 @@ export default function GardenWildlife() {
           </Link>
         </section>
 
-        <WildlifeTab zones={zones} plantsByZone={plantsByZone} />
+        <section className="wildlife-3d-section" aria-label="Interaktivt dyrelivskort">
+          <Suspense
+            fallback={
+              <div className="wl3d-skeleton" aria-hidden="true">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                  <circle cx="20" cy="20" r="18" stroke="#4A7820" strokeWidth="3" strokeDasharray="30 84" strokeLinecap="round" />
+                </svg>
+              </div>
+            }
+          >
+            <WildlifeHabitat3D
+              score={profile.score}
+              habitats={habitats}
+              mode={mode}
+              selectedHabitatId={selectedHabitatId}
+              onModeChange={setMode}
+              onSelectHabitat={setSelectedHabitatId}
+            />
+          </Suspense>
+        </section>
+
+        <WildlifeTab zones={zones} plantsByZone={plantsByZone} focus={MODE_TO_FOCUS[mode]} />
       </div>
       <SiteFooter />
     </>

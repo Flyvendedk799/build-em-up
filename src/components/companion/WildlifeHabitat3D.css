@@ -1,0 +1,210 @@
+/* Scoped styles for the Dyreliv (wildlife habitat) diorama.
+   Everything lives under .wl3d — no global resets. */
+
+.wl3d {
+  position: relative;
+  width: 100%;
+  margin: 0 auto;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #f4edd8;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 6px 44px rgba(25, 16, 6, 0.16), 0 0 0 1px rgba(25, 16, 6, 0.06);
+}
+
+.wl3d-canvas {
+  display: block;
+  width: 100%;
+  height: 500px;
+  cursor: default;
+  touch-action: pan-y;
+}
+
+/* Badge */
+.wl3d-badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 10px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.wl3d-badge span {
+  font-size: 11px;
+  font-weight: 700;
+  color: #183a0c;
+  letter-spacing: 0.3px;
+}
+
+/* Mode tabs */
+.wl3d-tabs {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: 100px;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 18px rgba(25, 16, 6, 0.12);
+  z-index: 10;
+  white-space: nowrap;
+  max-width: calc(100% - 28px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wl3d-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.wl3d-tab {
+  border: none;
+  border-radius: 100px;
+  padding: 6px 13px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  background: transparent;
+  color: #3a3826;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.wl3d-tab:hover {
+  color: #182c0a;
+}
+
+.wl3d-tab.is-active {
+  background: #223c14;
+  color: #fff;
+  font-weight: 700;
+}
+
+.wl3d-tab:focus-visible {
+  outline: 2px solid #68c838;
+  outline-offset: 2px;
+}
+
+/* Info bar */
+.wl3d-infobar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 14px 22px 20px;
+  background: linear-gradient(to top, rgba(244, 237, 216, 0.97) 50%, rgba(244, 237, 216, 0));
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 58px;
+}
+
+.wl3d-info-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #182e0c;
+  letter-spacing: -0.1px;
+}
+
+.wl3d-info-sub {
+  font-size: 11px;
+  color: #6a7850;
+}
+
+/* Loading skeleton */
+.wl3d-skeleton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 500px;
+  margin: 0 auto;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f4edd8 0%, #ede2c0 100%);
+  box-shadow: 0 6px 44px rgba(25, 16, 6, 0.12), 0 0 0 1px rgba(25, 16, 6, 0.06);
+}
+
+.wl3d-skeleton svg {
+  animation: wl3d-spin 1.2s linear infinite;
+}
+
+@keyframes wl3d-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Static fallback */
+.wl3d-fallback {
+  background: #f4edd8;
+  border-radius: 20px;
+  padding: 20px 24px;
+  box-shadow: 0 6px 44px rgba(25, 16, 6, 0.12), 0 0 0 1px rgba(25, 16, 6, 0.06);
+}
+
+.wl3d-fallback-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.wl3d-fallback-score {
+  margin-left: auto;
+  font-weight: 700;
+  color: #182c0a;
+}
+
+.wl3d-fallback-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.wl3d-fallback-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  border-left: 4px solid var(--wl3d-strength, #547038);
+}
+
+.wl3d-fallback-card strong {
+  display: block;
+  font-weight: 700;
+  font-size: 13px;
+  color: #182c0a;
+}
+
+.wl3d-fallback-card small {
+  font-size: 11px;
+  color: #388818;
+}
+
+@media (max-width: 640px) {
+  .wl3d-canvas,
+  .wl3d-skeleton {
+    height: 380px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl3d-skeleton svg {
+    animation: none;
+  }
+}
